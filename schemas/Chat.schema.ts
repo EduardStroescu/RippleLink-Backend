@@ -1,34 +1,44 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import mongoose from 'mongoose';
-import { Message } from './Message.schema';
-import { User } from './User.schema';
+import mongoose, { Document, Types } from 'mongoose';
 
 @Schema({
   timestamps: true,
   versionKey: false,
   toJSON: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
   toObject: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
 })
-export class Chat {
+export class Chat extends Document {
+  _id: Types.ObjectId;
+
+  @Prop({ required: false })
+  name: string;
+
+  @Prop({ required: true, enum: ['group', 'dm'] })
+  type: string;
+
   @Prop({
     type: [
       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     ],
   })
-  users: User[];
+  users: Types.ObjectId[];
 
-  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }] })
-  messages?: Message[];
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message',
+    required: false,
+  })
+  lastMessage: Types.ObjectId;
 }
 
 export const ChatSchema = SchemaFactory.createForClass(Chat);

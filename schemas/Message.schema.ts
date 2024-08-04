@@ -1,31 +1,42 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import mongoose from 'mongoose';
+import mongoose, { Document, Types } from 'mongoose';
 
 @Schema({
   timestamps: true,
   versionKey: false,
   toJSON: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
   toObject: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
 })
-export class Message {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true })
-  userId: string;
+export class Message extends Document {
+  _id: Types.ObjectId;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Chat', required: true })
-  chatId: string;
+  chatId: Types.ObjectId;
 
-  @Prop({ type: String, required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true })
+  senderId: Types.ObjectId;
+
+  @Prop({ required: true })
   content: string;
+
+  @Prop({ enum: ['text', 'image', 'video', 'audio', 'file'], required: true })
+  type: 'text' | 'image' | 'video' | 'audio' | 'file';
+
+  @Prop({ type: Boolean, default: false })
+  read: boolean;
+
+  @Prop({ type: Date })
+  readAt: Date;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

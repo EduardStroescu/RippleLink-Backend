@@ -1,8 +1,11 @@
-import { Message } from 'schemas/Message.schema';
-import { User } from 'schemas/User.schema';
-
 export class CreateChatDto {
-  users: User[];
+  name?: string;
 
-  messages: Message[];
+  type?: 'group' | 'dm';
+
+  userId: string;
+
+  messageType: 'text' | 'image' | 'video' | 'file' | 'audio';
+
+  lastMessage: string;
 }

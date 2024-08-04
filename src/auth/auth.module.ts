@@ -6,6 +6,8 @@ import { User, UserSchema } from 'schemas/User.schema';
 import { UserSettings, UserSettingsSchema } from 'schemas/UserSettings.schema';
 import { JwtStrategy } from './strategies';
 import { JwtModule } from '@nestjs/jwt';
+import { Status, StatusSchema } from 'schemas/Status.schema';
+import { UsersModule } from 'src/users/users.module';
 // import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 
 @Module({
@@ -16,8 +18,10 @@ import { JwtModule } from '@nestjs/jwt';
         name: UserSettings.name,
         schema: UserSettingsSchema,
       },
+      { name: Status.name, schema: StatusSchema },
     ]),
     JwtModule.register({}),
+    UsersModule,
     // CloudinaryModule,
   ],
   controllers: [AuthController],

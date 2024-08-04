@@ -12,5 +12,6 @@ import { SettingsService } from './settings.service';
   ],
   controllers: [SettingsController],
   providers: [SettingsService],
+  exports: [SettingsService],
 })
 export class SettingsModule {}

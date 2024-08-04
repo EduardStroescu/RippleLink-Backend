@@ -1,25 +1,25 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import mongoose from 'mongoose';
-import { UserSettings } from './UserSettings.schema';
-import { Chat } from './Chat.schema';
+import mongoose, { Document, Types } from 'mongoose';
 
 @Schema({
   timestamps: true,
   versionKey: false,
   toJSON: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
   toObject: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
 })
-export class User {
+export class User extends Document {
+  _id: Types.ObjectId;
+
   @Prop({ type: String, unique: true, required: true })
   email: string;
 
@@ -41,14 +41,14 @@ export class User {
   @Prop({ type: String, required: false })
   refresh_token?: string;
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'UserSettings' })
-  settings?: UserSettings;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Status' })
+  status?: Types.ObjectId;
 
   @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Chat' }] })
-  chats?: Chat[];
+  chats?: Types.ObjectId[];
 
-  @Prop({ type: Boolean, default: false, required: false })
-  isOnline?: boolean;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'UserSettings' })
+  settings?: Types.ObjectId;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

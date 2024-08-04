@@ -15,57 +15,71 @@ import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
 import { UserSettings } from 'schemas/UserSettings.schema';
 import { Model, Types } from 'mongoose';
+import { Status } from 'schemas/Status.schema';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(UserSettings.name) private settingsModel: Model<UserSettings>,
+    @InjectModel(Status.name) private statusModel: Model<Status>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private readonly usersService: UsersService,
     // private cloudinaryService: CloudinaryService,
   ) {}
 
   async register(createUserDto: CreateUserDto) {
     try {
-      let newUser;
+      // Hash the password
       const password = await bcrypt.hash(createUserDto.password, 10);
-      let avatar: string;
+
+      let settingsId = null;
+      if (createUserDto.settings) {
+        const newSettings = new this.settingsModel(createUserDto.settings);
+        const savedNewSettings = await newSettings.save();
+        settingsId = savedNewSettings._id;
+      }
+
+      let newUser = new this.userModel({
+        email: createUserDto.email,
+        firstName: createUserDto.firstName,
+        lastName: createUserDto.lastName,
+        displayName:
+          createUserDto.displayName ||
+          createUserDto.firstName + createUserDto.lastName,
+        password,
+        settings: settingsId,
+      });
+
+      //TODO: FINISH THIS WHEN SETTING UP CLOUDINARY
       if (createUserDto.avatarUrl) {
         // const userAvatar = await this.cloudinaryService.uploadFile(
         //   user.avatar,
         //   user.email,
         // );
-        avatar = createUserDto.avatarUrl;
-      }
-      if (createUserDto.settings) {
-        const newSettings = new this.settingsModel(createUserDto.settings);
-        const savedNewSettings = await newSettings.save();
-        newUser = new this.userModel({
-          email: createUserDto.email,
-          firstName: createUserDto.firstName,
-          lastName: createUserDto.lastName,
-          displayName: createUserDto.displayName,
-          avatarUrl: avatar,
-          password,
-          settings: savedNewSettings._id,
-        });
-      } else {
-        newUser = new this.userModel({
-          email: createUserDto.email,
-          firstName: createUserDto.firstName,
-          lastName: createUserDto.lastName,
-          displayName: createUserDto.displayName,
-          avatarUrl: avatar,
-          password,
-        });
-      }
-      const { _doc: savedUser } = await newUser.save();
-      const tokens = await this.signTokens(savedUser._id, savedUser.email);
-      await this.updateRefreshToken(savedUser._id, tokens.refresh_token);
 
-      delete savedUser.password;
-      return { ...savedUser, ...tokens };
+        newUser.avatarUrl = createUserDto.avatarUrl;
+      }
+
+      newUser = await newUser.save();
+
+      const userStatus = await this.statusModel.create({
+        userId: newUser._id,
+        online: true,
+      });
+      await userStatus.save();
+
+      const tokens = await this.signTokens(newUser._id, newUser.email);
+      await this.updateRefreshToken(newUser._id, tokens.refresh_token);
+
+      newUser = await newUser.populate('status');
+      newUser = newUser.toObject();
+
+      delete newUser.password; // Remove password from response
+      await this.usersService.connectUser(newUser._id);
+      return { ...newUser, ...tokens };
     } catch (error) {
       if (error.code === 'P2002') {
         // Unique constraint failed
@@ -79,36 +93,51 @@ export class AuthService {
   }
 
   async login(loginUserDto: LoginUserDto) {
-    const user = await this.userModel.findOne({
-      email: loginUserDto.email,
-    });
+    try {
+      const user = await this.userModel.findOne({
+        email: loginUserDto.email,
+      });
 
-    if (!user) throw new NotFoundException('User not found');
+      if (!user) throw new NotFoundException('User not found');
 
-    const isPasswordValid = await bcrypt.compare(
-      loginUserDto.password,
-      user.password,
-    );
+      const isPasswordValid = await bcrypt.compare(
+        loginUserDto.password,
+        user.password,
+      );
 
-    if (!isPasswordValid)
-      throw new UnauthorizedException('Invalid email or password');
+      if (!isPasswordValid)
+        throw new UnauthorizedException('Invalid email or password');
 
-    const tokens = await this.signTokens(user._id, user.email);
-    await this.updateRefreshToken(user._id, tokens.refresh_token);
+      const tokens = await this.signTokens(
+        user._id as Types.ObjectId,
+        user.email,
+      );
+      await this.updateRefreshToken(
+        user._id as Types.ObjectId,
+        tokens.refresh_token,
+      );
 
-    delete user.password;
-
-    return {
-      ...user.toObject(),
-      ...tokens,
-    };
+      delete user.password; // Remove password from response
+      await this.usersService.connectUser(user._id);
+      return {
+        ...user.toObject(),
+        ...tokens,
+      };
+    } catch (error) {
+      throw new HttpException(
+        'An error occurred while logging user in',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   async refreshToken(refreshToken: string) {
     try {
-      const user = await this.userModel.findOne({
-        refresh_token: refreshToken,
-      });
+      const user = await this.userModel
+        .findOne({
+          refresh_token: refreshToken,
+        })
+        .populate('chats');
 
       if (!user || user.refresh_token !== refreshToken)
         throw new UnauthorizedException(
@@ -119,13 +148,16 @@ export class AuthService {
         secret: this.configService.get<string>('REFRESH_SECRET'),
       });
 
-      const { access_token } = await this.signTokens(
+      const { access_token, refresh_token } = await this.signTokens(
         payload.sub,
         payload.email,
       );
+      await this.updateRefreshToken(user._id as Types.ObjectId, refresh_token);
 
       return {
+        ...user.toObject(),
         access_token,
+        refresh_token,
       };
     } catch (err) {
       throw new UnauthorizedException(
@@ -135,11 +167,8 @@ export class AuthService {
   }
 
   async logout(userId: Types.ObjectId) {
-    const user = await this.userModel.findByIdAndUpdate(userId, {
-      refresh_token: '',
-    });
-    if (!user) throw new UnauthorizedException();
-
+    await this.updateRefreshToken(userId, '');
+    await this.usersService.disconnectUser(userId);
     return { success: 'Logged out' };
   }
 

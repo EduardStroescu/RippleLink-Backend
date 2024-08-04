@@ -20,10 +20,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: { sub: number; email: string }) {
-    const user = await this.userModel.findById(payload.sub).exec();
+    const user = await this.userModel
+      .findById(payload.sub)
+      .populate({ path: 'chats' })
+      .exec();
     if (!user) throw new UnauthorizedException();
 
     delete user.password;
-    return user;
+    return user.toObject();
   }
 }

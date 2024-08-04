@@ -7,17 +7,21 @@ import { SettingsModule } from './settings/settings.module';
 import { MessagesModule } from './messages/messages.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
+import { HealthModule } from './health/health.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
-    MongooseModule.forRoot(process.env.MONGODB_URI),
     ConfigModule.forRoot({ isGlobal: true }),
+    MongooseModule.forRoot(process.env.MONGODB_URI),
+    RedisModule,
     GatewayModule,
     AuthModule,
     UsersModule,
     SettingsModule,
     ChatsModule,
     MessagesModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

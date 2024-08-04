@@ -1,11 +1,3 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { CreateUserSettingsDto } from './CreateUserSettings.dto';
 
-export class UpdateUserSettingsDto {
-  @IsOptional()
-  @IsString()
-  backgroundImage?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  receiveNotifications?: boolean;
-}
+export class UpdateUserSettingsDto implements CreateUserSettingsDto {}

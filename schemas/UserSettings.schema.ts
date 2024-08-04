@@ -1,22 +1,25 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
 
 @Schema({
   timestamps: false,
   versionKey: false,
   toJSON: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
   toObject: {
-    virtuals: true,
+    virtuals: false,
     transform: (_, obj) => {
       return obj;
     },
   },
 })
-export class UserSettings {
+export class UserSettings extends Document {
+  _id: string;
+
   @Prop({ required: false })
   backgroundImage?: string;
 

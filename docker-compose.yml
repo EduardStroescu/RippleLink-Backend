@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    networks:
+      - redis
+
+  nestjs:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD} 
+      CLIENT_URL: ${CLIENT_URL}
+      PORT: ${PORT}
+      MONGODB_URI: ${MONGODB_URI}
+      ACCESS_SECRET: ${ACCESS_SECRET}
+      REFRESH_SECRET: ${REFRESH_SECRET}
+      REDIS_URL: ${REDIS_URL}
+    depends_on:
+      - redis
+    networks:
+      - redis
+
+volumes:
+  redis-data:
+
+networks:
+  redis:

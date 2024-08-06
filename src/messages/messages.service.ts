@@ -10,6 +10,7 @@ import { Model, Types } from 'mongoose';
 import { Chat } from 'schemas/Chat.schema';
 import { Message } from 'schemas/Message.schema';
 import { User } from 'schemas/User.schema';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 
 @Injectable()
 export class MessagesService {
@@ -18,6 +19,7 @@ export class MessagesService {
     private messageModel: Model<Message>,
     @InjectModel(Chat.name) private chatsModel: Model<Chat>,
     @InjectModel(User.name) private userModel: Model<User>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async createMessage(
@@ -30,12 +32,32 @@ export class MessagesService {
       throw new BadRequestException('Invalid input');
     }
     try {
-      let newMessage = await this.messageModel.create({
-        senderId: userId,
-        chatId: room,
-        content: message,
-        type: type,
-      });
+      let newMessage;
+
+      if (type !== 'text') {
+        const sender = await this.userModel.findById(userId).exec();
+        if (sender) {
+          const contentUrl =
+            type === 'image'
+              ? await this.cloudinaryService.uploadImageFile(message)
+              : await this.cloudinaryService.uploadOtherFileTypes(message);
+
+          newMessage = await this.messageModel.create({
+            senderId: userId,
+            chatId: room,
+            content: contentUrl.url,
+            type: type,
+          });
+        }
+      } else {
+        newMessage = await this.messageModel.create({
+          senderId: userId,
+          chatId: room,
+          content: message,
+          type: type,
+        });
+      }
+
       const newChat = await this.chatsModel
         .findByIdAndUpdate(
           room,

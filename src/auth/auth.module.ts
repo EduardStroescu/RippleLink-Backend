@@ -8,7 +8,7 @@ import { JwtStrategy } from './strategies';
 import { JwtModule } from '@nestjs/jwt';
 import { Status, StatusSchema } from 'schemas/Status.schema';
 import { UsersModule } from 'src/users/users.module';
-// import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
+import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -22,7 +22,7 @@ import { UsersModule } from 'src/users/users.module';
     ]),
     JwtModule.register({}),
     UsersModule,
-    // CloudinaryModule,
+    CloudinaryModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

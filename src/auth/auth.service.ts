@@ -10,7 +10,7 @@ import { CreateUserDto, LoginUserDto } from './dto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-// import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
 import { UserSettings } from 'schemas/UserSettings.schema';
@@ -27,7 +27,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private readonly usersService: UsersService,
-    // private cloudinaryService: CloudinaryService,
+    private cloudinaryService: CloudinaryService,
   ) {}
 
   async register(createUserDto: CreateUserDto) {
@@ -53,14 +53,13 @@ export class AuthService {
         settings: settingsId,
       });
 
-      //TODO: FINISH THIS WHEN SETTING UP CLOUDINARY
       if (createUserDto.avatarUrl) {
-        // const userAvatar = await this.cloudinaryService.uploadFile(
-        //   user.avatar,
-        //   user.email,
-        // );
+        const userAvatar = await this.cloudinaryService.uploadAvatar(
+          createUserDto.avatarUrl,
+          createUserDto.email,
+        );
 
-        newUser.avatarUrl = createUserDto.avatarUrl;
+        newUser.avatarUrl = userAvatar.url;
       }
 
       newUser = await newUser.save();

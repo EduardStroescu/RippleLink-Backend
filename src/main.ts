@@ -7,9 +7,22 @@ import {
   SwaggerDocumentOptions,
   SwaggerModule,
 } from '@nestjs/swagger';
+import { IoAdapter } from '@nestjs/platform-socket.io';
+import { ServerOptions } from 'socket.io';
+
+class CustomIoAdapter extends IoAdapter {
+  createIOServer(port: number, options?: ServerOptions): any {
+    const server = super.createIOServer(port, {
+      ...options,
+      maxHttpBufferSize: 1e8, // max transfer size 100MB
+    });
+    return server;
+  }
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useWebSocketAdapter(new CustomIoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['/'] });
   const PORT = process.env.PORT ?? 3000;
 

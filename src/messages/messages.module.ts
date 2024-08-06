@@ -5,6 +5,7 @@ import { MessagesController } from './messages.controller';
 import { MessagesService } from './messages.service';
 import { Chat, ChatSchema } from 'schemas/Chat.schema';
 import { User, UserSchema } from 'schemas/User.schema';
+import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { User, UserSchema } from 'schemas/User.schema';
       { name: Chat.name, schema: ChatSchema },
       { name: User.name, schema: UserSchema },
     ]),
+    CloudinaryModule,
   ],
   controllers: [MessagesController],
   providers: [MessagesService],

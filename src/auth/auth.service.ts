@@ -13,7 +13,7 @@ import * as bcrypt from 'bcrypt';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
-import { UserSettings } from 'schemas/UserSettings.schema';
+import { Settings } from 'schemas/Settings.schema';
 import { Model, Types } from 'mongoose';
 import { Status } from 'schemas/Status.schema';
 import { UsersService } from 'src/users/users.service';
@@ -22,7 +22,7 @@ import { UsersService } from 'src/users/users.service';
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(UserSettings.name) private settingsModel: Model<UserSettings>,
+    @InjectModel(Settings.name) private settingsModel: Model<Settings>,
     @InjectModel(Status.name) private statusModel: Model<Status>,
     private jwtService: JwtService,
     private configService: ConfigService,

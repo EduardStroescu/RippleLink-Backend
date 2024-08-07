@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { UserSettings, UserSettingsSchema } from 'schemas/UserSettings.schema';
+import { Settings, SettingsSchema } from 'schemas/Settings.schema';
 import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: UserSettings.name, schema: UserSettingsSchema },
+      { name: Settings.name, schema: SettingsSchema },
     ]),
   ],
   controllers: [SettingsController],

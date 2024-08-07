@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({
   timestamps: false,
@@ -17,8 +17,8 @@ import { Document } from 'mongoose';
     },
   },
 })
-export class UserSettings extends Document {
-  _id: string;
+export class Settings extends Document {
+  _id: Types.ObjectId;
 
   @Prop({ required: false })
   backgroundImage?: string;
@@ -27,4 +27,4 @@ export class UserSettings extends Document {
   receiveNotifications?: boolean;
 }
 
-export const UserSettingsSchema = SchemaFactory.createForClass(UserSettings);
+export const SettingsSchema = SchemaFactory.createForClass(Settings);

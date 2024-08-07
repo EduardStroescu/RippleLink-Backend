@@ -5,16 +5,18 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { SettingsModule } from 'src/settings/settings.module';
 import { Status, StatusSchema } from 'schemas/Status.schema';
-import { Chat, ChatSchema } from 'schemas/Chat.schema';
+import { Settings, SettingsSchema } from 'schemas/Settings.schema';
+import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Status.name, schema: StatusSchema },
-      { name: Chat.name, schema: ChatSchema },
+      { name: Settings.name, schema: SettingsSchema },
     ]),
     SettingsModule,
+    CloudinaryModule,
   ],
   providers: [UsersService],
   controllers: [UsersController],

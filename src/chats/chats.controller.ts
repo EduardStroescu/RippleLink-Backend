@@ -107,6 +107,12 @@ export class ChatsController {
     }
   }
 
+  @Get('sharedFiles/:chatId')
+  async getSharedFiles(@Param('chatId') chatId: string) {
+    const response = await this.chatsService.getSharedFiles(chatId);
+    return response;
+  }
+
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,

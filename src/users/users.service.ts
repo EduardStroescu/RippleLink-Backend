@@ -8,12 +8,16 @@ import { Model, Types } from 'mongoose';
 import { User } from 'schemas/User.schema';
 import UpdateUserDto from './dto/UpdateUser.dto';
 import { Status } from 'schemas/Status.schema';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { Settings } from 'schemas/Settings.schema';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Status.name) private statusModel: Model<Status>,
+    @InjectModel(Settings.name) private settingsModel: Model<Settings>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async getAllUsers() {
@@ -120,17 +124,6 @@ export class UsersService {
     }
   }
 
-  async deleteUser(_id: Types.ObjectId) {
-    try {
-      const deletedUser = await this.userModel.findByIdAndDelete(_id);
-      if (!deletedUser) throw new BadRequestException('User not found');
-      await this.statusModel.deleteOne({ userId: _id });
-      return deletedUser;
-    } catch (err) {
-      throw new InternalServerErrorException(err);
-    }
-  }
-
   async getUserByDisplayName(displayName: string) {
     try {
       const regex = new RegExp(displayName, 'i');
@@ -138,6 +131,33 @@ export class UsersService {
         .find({ displayName: { $regex: regex } })
         .exec();
       return response;
+    } catch (err) {
+      throw new InternalServerErrorException(err);
+    }
+  }
+
+  async deleteUser(_id: Types.ObjectId) {
+    try {
+      const deletedUser = await this.userModel
+        .findById(_id)
+        .populate<{ settings: Settings }>({
+          path: 'settings',
+        })
+        .exec();
+      if (!deletedUser) throw new BadRequestException('User not found');
+
+      if (deletedUser.avatarUrl) {
+        const publicId = deletedUser.avatarUrl.split('/').pop().split('.')[0];
+        await this.cloudinaryService.removeFile(publicId);
+      }
+      if (deletedUser.settings && deletedUser.settings.backgroundImage) {
+        const publicId = deletedUser.avatarUrl.split('/').pop().split('.')[0];
+        await this.cloudinaryService.removeFile(publicId);
+      }
+      await deletedUser.deleteOne();
+      await this.statusModel.deleteOne({ userId: _id });
+      await this.settingsModel.deleteOne({ userId: _id });
+      return deletedUser;
     } catch (err) {
       throw new InternalServerErrorException(err);
     }

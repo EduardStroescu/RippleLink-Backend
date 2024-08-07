@@ -196,6 +196,7 @@ export class Gateway
           new Types.ObjectId(room),
           message,
         );
+
       const response = await this.redisService.updateInCache(
         `messages?chatId=${room}`,
         async () => updatedMessage,

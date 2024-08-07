@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { Types } from 'mongoose';
+import { ResetRedisCacheDto } from './dto/resetRedisCache.dto';
+import { ConfigService } from '@nestjs/config';
 
 type QueryOperator = '$eq' | '$ne' | '$gt' | '$lt' | '$gte' | '$lte';
 type QueryFilter<T> = Partial<Record<keyof T, { [op in QueryOperator]?: any }>>;
@@ -19,7 +21,10 @@ interface Identifiable {
 
 @Injectable()
 export class RedisService {
-  constructor(@InjectRedis() private readonly redis: Redis) {}
+  constructor(
+    @InjectRedis() private readonly redis: Redis,
+    private readonly configService: ConfigService,
+  ) {}
 
   async getOrSetCache<T>(key: string, cb: () => Promise<T>): Promise<T> {
     try {
@@ -298,6 +303,26 @@ export class RedisService {
     try {
       const result = await this.redis.ping();
       return result;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Redis is not running. Please try again later!`,
+      );
+    }
+  }
+
+  async resetCache(resetRedisCacheDto: ResetRedisCacheDto): Promise<void> {
+    try {
+      const adminId = this.configService.get('ADMIN_ID');
+      const adminPassword = this.configService.get('ADMIN_PASSWORD');
+
+      if (
+        adminId !== resetRedisCacheDto.adminId ||
+        adminPassword !== resetRedisCacheDto.adminPassword
+      ) {
+        throw new InternalServerErrorException('Invalid admin credentials.');
+      }
+
+      await this.redis.flushall();
     } catch (error) {
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,

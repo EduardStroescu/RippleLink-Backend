@@ -52,22 +52,6 @@ export class UsersController {
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: String })
-  @ApiUnauthorizedResponse({
-    status: 401,
-    description: 'Invalid access_token token',
-  })
-  @UseGuards(JwtGuard)
-  @Delete(':id')
-  async deleteUser(@Param('id') id: string) {
-    const deletedUser = await this.usersService.deleteUser(
-      new Types.ObjectId(id),
-    );
-    if (!deletedUser) throw new HttpException('User not found', 404);
-    return deletedUser;
-  }
-
-  @ApiBearerAuth()
   @ApiOkResponse({ status: 200, type: CreateUserDto })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -100,5 +84,21 @@ export class UsersController {
     );
     if (!updatedUser) throw new HttpException('User not found', 404);
     return updatedUser;
+  }
+
+  @ApiBearerAuth()
+  @ApiOkResponse({ status: 200, type: String })
+  @ApiUnauthorizedResponse({
+    status: 401,
+    description: 'Invalid access_token token',
+  })
+  @UseGuards(JwtGuard)
+  @Delete(':id')
+  async deleteUser(@Param('id') id: string) {
+    const deletedUser = await this.usersService.deleteUser(
+      new Types.ObjectId(id),
+    );
+    if (!deletedUser) throw new HttpException('User not found', 404);
+    return deletedUser;
   }
 }

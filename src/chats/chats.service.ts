@@ -141,6 +141,13 @@ export class ChatsService {
     }
   }
 
+  //TODO IMPLEMENT PAGINATION AND CURSORS
+  async getSharedFiles(chatId: string) {
+    return await this.messageModel
+      .find({ chatId: chatId, type: { $ne: 'text' } })
+      .sort({ createdAt: -1 });
+  }
+
   async deleteChat(user: User, chatId: Types.ObjectId): Promise<Chat> {
     if (!chatId) {
       throw new BadRequestException('Invalid input');

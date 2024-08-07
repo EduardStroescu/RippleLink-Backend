@@ -47,7 +47,7 @@ export class User extends Document {
   @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Chat' }] })
   chats?: Types.ObjectId[];
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'UserSettings' })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Settings' })
   settings?: Types.ObjectId;
 }
 

@@ -110,9 +110,9 @@ export class MessagesService {
       throw new BadRequestException('Invalid input');
     }
     try {
-      const updatedMessage = await this.messageModel
+      let updatedMessage = await this.messageModel
         .findOneAndUpdate(
-          { _id: messageId, userId: userId, chatId: room },
+          { _id: messageId, senderId: userId, chatId: room },
           { content },
           { new: true },
         )
@@ -121,10 +121,12 @@ export class MessagesService {
       let updatedChat = await this.chatsModel.findById(room).exec();
 
       if (updatedChat.lastMessage.equals(updatedMessage._id)) {
-        updatedChat = await updatedChat
-          .updateOne(room, {
-            $set: { lastMessage: updatedMessage._id },
-          })
+        await updatedChat.updateOne(room, {
+          $set: { lastMessage: updatedMessage._id },
+        });
+
+        updatedChat = await this.chatsModel
+          .findById(room)
           .populate({
             path: 'users',
             select: 'displayName avatarUrl status',
@@ -133,14 +135,19 @@ export class MessagesService {
           .populate({
             path: 'lastMessage',
             populate: { path: 'senderId', select: '_id, displayName' },
-          });
+          })
+          .exec();
       } else {
         updatedChat = null;
       }
 
+      updatedMessage = await updatedMessage.populate({
+        path: 'senderId',
+        select: 'displayName',
+      });
       return {
         updatedMessage: updatedMessage.toObject(),
-        updatedChat: updatedChat,
+        updatedChat: updatedChat ? updatedChat.toObject() : null,
       };
     } catch (err) {
       throw new HttpException(
@@ -165,6 +172,11 @@ export class MessagesService {
 
       if (!deletedMessage) {
         throw new NotFoundException('Message not found');
+      }
+
+      if (deletedMessage.type !== 'text') {
+        const publicId = deletedMessage.content.split('/').pop().split('.')[0];
+        await this.cloudinaryService.removeFile(publicId);
       }
 
       const latestMessages = await this.messageModel

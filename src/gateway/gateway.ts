@@ -344,6 +344,36 @@ export class Gateway
     }
   }
 
+  @SubscribeMessage('initiateCall')
+  handleCallUser(
+    @MessageBody() body: { chatId: string; offer: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId, offer } = body;
+    const { _id } = client.handshake.query;
+
+    client.broadcast.to(chatId).emit('incomingCall', {
+      _id,
+      offer: offer,
+    });
+  }
+
+  @SubscribeMessage('sendCallAnswer')
+  handleMakeAnswer(
+    @MessageBody() body: { chatId: string; answer: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId, answer } = body;
+    const { _id } = client.handshake.query;
+
+    // this.redisService.updateInCacheByFilter();
+
+    client.broadcast.to(chatId).emit('incomingCallAnswer', {
+      _id,
+      answer,
+    });
+  }
+
   private async handleError(client: Socket, error: any) {
     client.emit('error', {
       message: 'Failed to update chat',

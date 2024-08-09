@@ -65,9 +65,9 @@ export class AuthController {
     status: 401,
   })
   @HttpCode(HttpStatus.OK)
-  @Get('refresh')
-  async refreshToken(@Query() params: RefreshTokenDto) {
-    return this.authService.refreshToken(params.refresh_token);
+  @Post('refresh')
+  async refreshToken(@Body() body: RefreshTokenDto) {
+    return this.authService.refreshToken(body.refresh_token);
   }
 
   @UseGuards(JwtGuard)

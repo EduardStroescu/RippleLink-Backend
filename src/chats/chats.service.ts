@@ -3,6 +3,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Type,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -10,6 +11,7 @@ import { Chat } from 'schemas/Chat.schema';
 import { CreateChatDto } from './dto/CreateChat.dto';
 import { User } from 'schemas/User.schema';
 import { Message } from 'schemas/Message.schema';
+import { exec } from 'child_process';
 
 @Injectable()
 export class ChatsService {
@@ -114,6 +116,111 @@ export class ChatsService {
         'Unable to create chat',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  async callUpdate(_id: Types.ObjectId, chatId: Types.ObjectId, offer: string) {
+    try {
+      const user = await this.userModel.findById(_id);
+      if (!user || !user.chats.some((chat) => chat._id.equals(chatId))) {
+        throw new BadRequestException('You are not a member of this chat');
+      }
+
+      let updatedChat = await this.chatModel.findById(chatId).exec();
+      if (!updatedChat) {
+        throw new BadRequestException('Chat not found');
+      }
+
+      // Check if an ongoing call exists, create if not
+      if (!updatedChat.ongoingCall) {
+        updatedChat.ongoingCall = {
+          chatId: chatId,
+          participants: [],
+        };
+      }
+
+      const existingParticipant = updatedChat.ongoingCall.participants.find(
+        (participant) => participant.userId.equals(_id),
+      );
+
+      if (existingParticipant) {
+        // Update the existing participant's signal
+        existingParticipant.signal = offer;
+      } else {
+        // Add the user as a new participant
+        updatedChat.ongoingCall.participants.push({
+          userId: _id,
+          signal: offer,
+        });
+      }
+
+      updatedChat = await updatedChat.save();
+
+      updatedChat = await updatedChat.populate({
+        path: 'users',
+        select: 'displayName avatarUrl status',
+        populate: { path: 'status' },
+      });
+      updatedChat = await updatedChat.populate({
+        path: 'lastMessage',
+        populate: { path: 'senderId' },
+      });
+      updatedChat = await updatedChat.populate({
+        path: 'ongoingCall.participants.userId',
+      });
+
+      return updatedChat.toObject();
+    } catch (err) {
+      throw new BadRequestException('Unable to update call');
+    }
+  }
+
+  async endCall(_id: Types.ObjectId, chatId: Types.ObjectId): Promise<any> {
+    try {
+      // Find the chat document by ID
+      const chat = await this.chatModel.findById(chatId).exec();
+
+      if (!chat || !chat.ongoingCall) {
+        throw new Error('Chat or ongoing call not found');
+      }
+
+      // Filter out the participant to be removed
+      const updatedParticipants = chat.ongoingCall.participants.filter(
+        (participant) => !participant.userId.equals(_id),
+      );
+
+      // Update the ongoingCall field based on the remaining participants
+      if (updatedParticipants.length === 0) {
+        // If no participants are left, remove the ongoingCall field
+        chat.ongoingCall = undefined;
+      } else {
+        // Update participants if there are any left
+        chat.ongoingCall.participants = updatedParticipants;
+      }
+
+      // Save the updated document
+      await chat.save();
+
+      // Populate the fields
+      const populatedChat = await this.chatModel
+        .findById(chatId)
+        .populate({
+          path: 'users',
+          select: 'displayName avatarUrl status',
+          populate: { path: 'status' },
+        })
+        .populate({
+          path: 'lastMessage',
+          populate: { path: 'senderId' },
+        })
+        .populate({ path: 'ongoingCall.participants.userId' })
+        .exec();
+
+      return populatedChat.toObject();
+    } catch (err) {
+      // Log the error for debugging
+      console.error('Error ending call:', err);
+      throw new BadRequestException('Unable to end call');
     }
   }
 

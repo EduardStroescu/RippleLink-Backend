@@ -14,6 +14,7 @@ import { Types } from 'mongoose';
 import { Chat } from 'schemas/Chat.schema';
 import { Message } from 'schemas/Message.schema';
 import { Server, Socket } from 'socket.io';
+import { ChatsService } from 'src/chats/chats.service';
 import { MessagesService } from 'src/messages/messages.service';
 import { RedisService } from 'src/redis/redis.service';
 
@@ -26,6 +27,7 @@ export class Gateway
 
   constructor(
     private readonly messagesService: MessagesService,
+    private readonly chatService: ChatsService,
     private readonly redisService: RedisService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -345,17 +347,20 @@ export class Gateway
   }
 
   @SubscribeMessage('initiateCall')
-  handleCallUser(
+  async handleCallUser(
     @MessageBody() body: { chatId: string; offer: any },
     @ConnectedSocket() client: Socket,
   ) {
     const { chatId, offer } = body;
     const { _id } = client.handshake.query;
 
-    client.broadcast.to(chatId).emit('incomingCall', {
-      _id,
-      offer: offer,
-    });
+    const updatedChat = await this.chatService.createCall(
+      new Types.ObjectId(_id as string),
+      new Types.ObjectId(chatId),
+      offer,
+    );
+
+    await this.updateChat(updatedChat);
   }
 
   @SubscribeMessage('sendCallAnswer')
@@ -366,12 +371,26 @@ export class Gateway
     const { chatId, answer } = body;
     const { _id } = client.handshake.query;
 
-    // this.redisService.updateInCacheByFilter();
-
     client.broadcast.to(chatId).emit('incomingCallAnswer', {
       _id,
       answer,
     });
+  }
+
+  @SubscribeMessage('endCall')
+  async handleEndCall(
+    @MessageBody() body: { chatId: string; answer: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId } = body;
+    const { _id } = client.handshake.query;
+
+    const updatedChat = await this.chatService.endCall(
+      new Types.ObjectId(_id as string),
+      new Types.ObjectId(chatId),
+    );
+
+    await this.updateChat(updatedChat);
   }
 
   private async handleError(client: Socket, error: any) {

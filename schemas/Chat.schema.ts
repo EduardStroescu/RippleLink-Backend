@@ -39,6 +39,24 @@ export class Chat extends Document {
     required: false,
   })
   lastMessage: Types.ObjectId;
+
+  @Prop({
+    type: {
+      participants: [
+        {
+          userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+          signal: { type: String },
+        },
+      ],
+    },
+    required: false,
+  })
+  ongoingCall?: {
+    participants: {
+      userId: Types.ObjectId;
+      signal: string;
+    }[];
+  };
 }
 
 export const ChatSchema = SchemaFactory.createForClass(Chat);

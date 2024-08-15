@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { HealthModule } from './health/health.module';
 import { RedisModule } from './redis/redis.module';
+import { CallsModule } from './calls/calls.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { RedisModule } from './redis/redis.module';
     SettingsModule,
     ChatsModule,
     MessagesModule,
+    CallsModule,
     HealthModule,
   ],
 })

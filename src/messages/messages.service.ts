@@ -89,7 +89,7 @@ export class MessagesService {
 
       newMessage = await newMessage.populate({
         path: 'senderId',
-        select: 'displayName',
+        select: '_id, displayName',
       });
       return { newMessage: newMessage.toObject(), newChat: newChat.toObject() };
     } catch (err) {
@@ -143,7 +143,7 @@ export class MessagesService {
 
       updatedMessage = await updatedMessage.populate({
         path: 'senderId',
-        select: 'displayName',
+        select: '_id, displayName',
       });
       return {
         updatedMessage: updatedMessage.toObject(),
@@ -262,7 +262,7 @@ export class MessagesService {
         .find({ chatId: chatId })
         .populate({
           path: 'senderId',
-          select: 'displayName',
+          select: '_id, displayName',
         })
         .populate({ path: 'chatId' })
         .sort({ createdAt: 1 })

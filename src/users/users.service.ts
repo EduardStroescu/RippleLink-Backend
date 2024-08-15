@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -10,6 +11,10 @@ import UpdateUserDto from './dto/UpdateUser.dto';
 import { Status } from 'schemas/Status.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { Settings } from 'schemas/Settings.schema';
+import { stripUserOfSensitiveData } from 'src/lib/utils';
+import { DeleteUserDto } from './dto/DeleteUser.dto';
+import * as bcrypt from 'bcrypt';
+import { ChangePasswordDto } from './dto/ChangePassword.dto';
 
 @Injectable()
 export class UsersService {
@@ -23,7 +28,10 @@ export class UsersService {
   async getAllUsers() {
     try {
       const response = await this.userModel.find().populate(['chats status']);
-      return response;
+      const strippedUsers = response.map((user) =>
+        stripUserOfSensitiveData(user),
+      );
+      return strippedUsers;
     } catch (err) {
       throw new InternalServerErrorException(err);
     }
@@ -31,11 +39,13 @@ export class UsersService {
 
   async getUserById(userId: Types.ObjectId) {
     try {
-      const response = await this.userModel
+      const user = await this.userModel
         .findById(userId)
         .populate('status')
         .exec();
-      return response.toObject();
+
+      const strippedUser = stripUserOfSensitiveData(user.toObject());
+      return strippedUser;
     } catch (err) {
       throw new InternalServerErrorException(err);
     }
@@ -118,9 +128,39 @@ export class UsersService {
       const user = await this.userModel.findByIdAndUpdate(_id, updateUserDto, {
         new: true,
       });
-      return user.toObject();
+      const strippedUser = stripUserOfSensitiveData(user.toObject());
+      return strippedUser;
     } catch (err) {
       throw new BadRequestException(err);
+    }
+  }
+
+  async changePassword(
+    _id: Types.ObjectId,
+    changePasswordDto: ChangePasswordDto,
+  ) {
+    try {
+      const user = await this.userModel.findById(_id).exec();
+      if (!user) throw new BadRequestException('User not found');
+      if (changePasswordDto.currentPassword !== user.password)
+        throw new UnauthorizedException('Invalid password');
+
+      const isPasswordValid = await bcrypt.compare(
+        changePasswordDto.newPassword,
+        user.password,
+      );
+      if (!isPasswordValid) throw new UnauthorizedException('Invalid password');
+
+      await this.userModel.findByIdAndUpdate(
+        _id,
+        { password: changePasswordDto.newPassword },
+        {
+          new: true,
+        },
+      );
+      return { success: 'Password changed' };
+    } catch (err) {
+      throw new InternalServerErrorException(err);
     }
   }
 
@@ -130,13 +170,14 @@ export class UsersService {
       const response = this.userModel
         .find({ displayName: { $regex: regex } })
         .exec();
-      return response;
+      const strippedUser = stripUserOfSensitiveData(response);
+      return strippedUser;
     } catch (err) {
       throw new InternalServerErrorException(err);
     }
   }
 
-  async deleteUser(_id: Types.ObjectId) {
+  async deleteUser(_id: Types.ObjectId, deleteUserDto: DeleteUserDto) {
     try {
       const deletedUser = await this.userModel
         .findById(_id)
@@ -145,19 +186,32 @@ export class UsersService {
         })
         .exec();
       if (!deletedUser) throw new BadRequestException('User not found');
+      if (
+        deleteUserDto.currentPassword !== deleteUserDto.confirmCurrentPassword
+      )
+        throw new UnauthorizedException('Passwords do not match');
+
+      const isPasswordValid = await bcrypt.compare(
+        deleteUserDto.currentPassword,
+        deletedUser.password,
+      );
+      if (!isPasswordValid) throw new UnauthorizedException('Invalid password');
 
       if (deletedUser.avatarUrl) {
         const publicId = deletedUser.avatarUrl.split('/').pop().split('.')[0];
         await this.cloudinaryService.removeFile(publicId);
       }
       if (deletedUser.settings && deletedUser.settings.backgroundImage) {
-        const publicId = deletedUser.avatarUrl.split('/').pop().split('.')[0];
+        const publicId = deletedUser.settings.backgroundImage
+          .split('/')
+          .pop()
+          .split('.')[0];
         await this.cloudinaryService.removeFile(publicId);
       }
       await deletedUser.deleteOne();
       await this.statusModel.deleteOne({ userId: _id });
       await this.settingsModel.deleteOne({ userId: _id });
-      return deletedUser;
+      return { success: 'User deleted' };
     } catch (err) {
       throw new InternalServerErrorException(err);
     }

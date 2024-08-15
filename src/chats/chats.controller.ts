@@ -74,31 +74,14 @@ export class ChatsController {
     @Body() createChatDto: CreateChatDto,
   ) {
     try {
-      const { newChat, updatedChat } = await this.chatsService.createChat(
-        userId,
-        createChatDto,
-      );
+      const newChat = await this.chatsService.createChat(userId, createChatDto);
 
-      if (newChat) {
-        await this.redisService.addToCache(
-          `chats?userId=${userId}`,
-          async () => newChat,
-        );
-        await this.gatewayService.createChat(userId, newChat);
-        return newChat;
-      } else {
-        await this.redisService.updateInCache(
-          `messages?chatId=${updatedChat._id.toString()}`,
-          async () => updatedChat.lastMessage,
-        );
-        await this.gatewayService.updateChat(updatedChat);
-        this.gatewayService.server
-          .to(updatedChat._id.toString())
-          .emit('messageCreated', {
-            content: updatedChat.lastMessage,
-          });
-        return updatedChat;
-      }
+      await this.redisService.addToCache(
+        `chats?userId=${userId}`,
+        async () => newChat,
+      );
+      await this.gatewayService.createChat(userId, newChat);
+      return newChat;
     } catch (error) {
       throw new HttpException(
         'There was an error while creating chat',

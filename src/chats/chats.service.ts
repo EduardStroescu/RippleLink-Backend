@@ -3,7 +3,6 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
-  Type,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -11,7 +10,6 @@ import { Chat } from 'schemas/Chat.schema';
 import { CreateChatDto } from './dto/CreateChat.dto';
 import { User } from 'schemas/User.schema';
 import { Message } from 'schemas/Message.schema';
-import { exec } from 'child_process';
 
 @Injectable()
 export class ChatsService {
@@ -24,54 +22,42 @@ export class ChatsService {
   async createChat(
     userId: Types.ObjectId,
     createChatDto: CreateChatDto,
-  ): Promise<{ newChat: Chat | undefined; updatedChat: Chat | undefined }> {
+  ): Promise<Chat> {
     try {
-      const [user1, user2] = await Promise.all([
-        this.userModel
-          .findById(userId)
-          .populate({
-            path: 'chats',
-            select: '_id, users',
-            populate: { path: 'users' },
-          })
-          .exec(),
-        this.userModel
-          .findById(createChatDto.userId)
-          .populate({
-            path: 'chats',
-            select: '_id, users',
-            populate: { path: 'users' },
-          })
-          .exec(),
-      ]);
+      // Retrieve all users involved in the chat, including the initiating user
+      const usersInChat = await this.userModel
+        .find({ _id: { $in: [userId, ...createChatDto.userIds] } })
+        .exec();
 
-      // Check if users exist
-      if (!user1 || !user2) {
-        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+      // Check if all user IDs provided exist
+      if (usersInChat.length !== createChatDto.userIds.length + 1) {
+        throw new HttpException(
+          'One or more users not found',
+          HttpStatus.NOT_FOUND,
+        );
       }
 
-      const populatedChatsUser2 = user2.toObject().chats as any;
-      const chatAlreadyExists = populatedChatsUser2.find(
-        (chat) =>
-          chat.users.some((user) => user._id.equals(userId)) &&
-          chat.users.some((user) => user._id.equals(createChatDto.userId)),
+      const existingChats = await this.chatModel.find({
+        users: { $all: [userId, ...createChatDto.userIds] },
+      });
+
+      const exactMatchChat = existingChats.find(
+        (chat) => chat.users.length === createChatDto.userIds.length + 1,
       );
 
-      let chat;
-      if (chatAlreadyExists) {
-        const chatId = chatAlreadyExists._id;
-        chat = await this.chatModel.findById(chatId);
-      } else {
-        // Create new chat
-        chat = new this.chatModel({
-          users: [userId, createChatDto.userId],
-          type: createChatDto.type || 'dm',
-          name: createChatDto.name || '',
-        });
-        await chat.save();
+      if (exactMatchChat) {
+        throw new HttpException('Chat already exists', HttpStatus.BAD_REQUEST);
       }
 
-      // Create a new message
+      // Create a new chat if no existing chat is found
+      const chat = new this.chatModel({
+        users: [userId, ...createChatDto.userIds],
+        type: createChatDto.type || 'dm',
+        name: createChatDto.name || '',
+      });
+      await chat.save();
+
+      // Create a new message (if provided) and associate it with the chat
       const newMessage = new this.messageModel({
         chatId: chat._id,
         senderId: userId,
@@ -80,23 +66,18 @@ export class ChatsService {
       });
       await newMessage.save();
 
-      // Update new chat with the last message ID
+      // Update the chat with the last message ID
       chat.lastMessage = newMessage._id;
-      await chat.save(); // Save the updated chat document
+      await chat.save();
 
       // Update users with the new chat
-      await Promise.all(
-        [user1, user2].map((user) =>
-          this.userModel.findByIdAndUpdate(
-            user._id,
-            {
-              $push: { chats: chat._id },
-            },
-            { new: true },
-          ),
-        ),
+      await this.userModel.updateMany(
+        { _id: { $in: [userId, ...createChatDto.userIds] } },
+        { $push: { chats: chat._id } },
+        { new: true },
       );
 
+      // Populate the newly created chat with relevant data
       let finalChat = await chat.populate({
         path: 'users',
         select: 'displayName avatarUrl status',
@@ -104,123 +85,16 @@ export class ChatsService {
       });
       finalChat = await finalChat.populate({
         path: 'lastMessage',
-        populate: { path: 'senderId' },
+        populate: { path: 'senderId', select: '_id, displayName' },
       });
 
-      return {
-        newChat: chatAlreadyExists ? undefined : finalChat.toObject(),
-        updatedChat: chatAlreadyExists ? finalChat.toObject() : undefined,
-      };
+      return finalChat.toObject();
     } catch (err) {
+      console.log(err);
       throw new HttpException(
         'Unable to create chat',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-  }
-
-  async callUpdate(_id: Types.ObjectId, chatId: Types.ObjectId, offer: string) {
-    try {
-      const user = await this.userModel.findById(_id);
-      if (!user || !user.chats.some((chat) => chat._id.equals(chatId))) {
-        throw new BadRequestException('You are not a member of this chat');
-      }
-
-      let updatedChat = await this.chatModel.findById(chatId).exec();
-      if (!updatedChat) {
-        throw new BadRequestException('Chat not found');
-      }
-
-      // Check if an ongoing call exists, create if not
-      if (!updatedChat.ongoingCall) {
-        updatedChat.ongoingCall = {
-          chatId: chatId,
-          participants: [],
-        };
-      }
-
-      const existingParticipant = updatedChat.ongoingCall.participants.find(
-        (participant) => participant.userId.equals(_id),
-      );
-
-      if (existingParticipant) {
-        // Update the existing participant's signal
-        existingParticipant.signal = offer;
-      } else {
-        // Add the user as a new participant
-        updatedChat.ongoingCall.participants.push({
-          userId: _id,
-          signal: offer,
-        });
-      }
-
-      updatedChat = await updatedChat.save();
-
-      updatedChat = await updatedChat.populate({
-        path: 'users',
-        select: 'displayName avatarUrl status',
-        populate: { path: 'status' },
-      });
-      updatedChat = await updatedChat.populate({
-        path: 'lastMessage',
-        populate: { path: 'senderId' },
-      });
-      updatedChat = await updatedChat.populate({
-        path: 'ongoingCall.participants.userId',
-      });
-
-      return updatedChat.toObject();
-    } catch (err) {
-      throw new BadRequestException('Unable to update call');
-    }
-  }
-
-  async endCall(_id: Types.ObjectId, chatId: Types.ObjectId): Promise<any> {
-    try {
-      // Find the chat document by ID
-      const chat = await this.chatModel.findById(chatId).exec();
-
-      if (!chat || !chat.ongoingCall) {
-        throw new Error('Chat or ongoing call not found');
-      }
-
-      // Filter out the participant to be removed
-      const updatedParticipants = chat.ongoingCall.participants.filter(
-        (participant) => !participant.userId.equals(_id),
-      );
-
-      // Update the ongoingCall field based on the remaining participants
-      if (updatedParticipants.length === 0) {
-        // If no participants are left, remove the ongoingCall field
-        chat.ongoingCall = undefined;
-      } else {
-        // Update participants if there are any left
-        chat.ongoingCall.participants = updatedParticipants;
-      }
-
-      // Save the updated document
-      await chat.save();
-
-      // Populate the fields
-      const populatedChat = await this.chatModel
-        .findById(chatId)
-        .populate({
-          path: 'users',
-          select: 'displayName avatarUrl status',
-          populate: { path: 'status' },
-        })
-        .populate({
-          path: 'lastMessage',
-          populate: { path: 'senderId' },
-        })
-        .populate({ path: 'ongoingCall.participants.userId' })
-        .exec();
-
-      return populatedChat.toObject();
-    } catch (err) {
-      // Log the error for debugging
-      console.error('Error ending call:', err);
-      throw new BadRequestException('Unable to end call');
     }
   }
 
@@ -235,7 +109,7 @@ export class ChatsService {
         })
         .populate({
           path: 'lastMessage',
-          populate: { path: 'senderId' },
+          populate: { path: 'senderId', select: '_id, displayName' },
         })
         .sort({ updatedAt: -1 })
         .exec();
@@ -275,17 +149,7 @@ export class ChatsService {
         { new: true },
       );
 
-      let updatedChat = await this.chatModel
-        .findById(chatId)
-        .populate({
-          path: 'users',
-          select: 'displayName avatarUrl status',
-          populate: { path: 'status' },
-        })
-        .populate({
-          path: 'lastMessage',
-          populate: { path: 'senderId' },
-        });
+      let updatedChat = await this.chatModel.findById(chatId).exec();
 
       updatedChat = updatedChat.toObject();
       const otherChatUsers = updatedChat.users.filter(

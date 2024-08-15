@@ -7,7 +7,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { CreateChatDto } from 'src/chats/dto/CreateChat.dto';
-import { CreateUserSettingsDto } from 'src/settings/dto/CreateUserSettings.dto';
+import { CreateSettingsDto } from 'src/settings/dto/CreateSettings.dto';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -109,6 +109,6 @@ export class CreateUserDto {
   })
   @IsOptional()
   @ValidateNested()
-  @Type(() => CreateUserSettingsDto)
-  settings?: CreateUserSettingsDto;
+  @Type(() => CreateSettingsDto)
+  settings?: CreateSettingsDto;
 }

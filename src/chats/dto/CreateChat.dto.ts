@@ -3,7 +3,7 @@ export class CreateChatDto {
 
   type?: 'group' | 'dm';
 
-  userId: string;
+  userIds: string[];
 
   messageType: 'text' | 'image' | 'video' | 'file' | 'audio';
 

@@ -33,12 +33,4 @@ export default class UpdateUserDto {
   @IsOptional()
   @IsString()
   displayName?: string;
-
-  @ApiPropertyOptional({
-    description: 'User Avatar URL.',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  avatarUrl?: string;
 }

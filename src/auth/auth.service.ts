@@ -13,16 +13,15 @@ import * as bcrypt from 'bcrypt';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
-import { Settings } from 'schemas/Settings.schema';
 import { Model, Types } from 'mongoose';
 import { Status } from 'schemas/Status.schema';
 import { UsersService } from 'src/users/users.service';
+import { stripUserOfSensitiveData } from 'src/lib/utils';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(Settings.name) private settingsModel: Model<Settings>,
     @InjectModel(Status.name) private statusModel: Model<Status>,
     private jwtService: JwtService,
     private configService: ConfigService,
@@ -35,13 +34,6 @@ export class AuthService {
       // Hash the password
       const password = await bcrypt.hash(createUserDto.password, 10);
 
-      let settingsId = null;
-      if (createUserDto.settings) {
-        const newSettings = new this.settingsModel(createUserDto.settings);
-        const savedNewSettings = await newSettings.save();
-        settingsId = savedNewSettings._id;
-      }
-
       let newUser = new this.userModel({
         email: createUserDto.email,
         firstName: createUserDto.firstName,
@@ -50,7 +42,6 @@ export class AuthService {
           createUserDto.displayName ||
           createUserDto.firstName + createUserDto.lastName,
         password,
-        settings: settingsId,
       });
 
       if (createUserDto.avatarUrl) {
@@ -76,26 +67,31 @@ export class AuthService {
       newUser = await newUser.populate('status');
       newUser = newUser.toObject();
 
-      delete newUser.password; // Remove password from response
       await this.usersService.connectUser(newUser._id);
-      return { ...newUser, ...tokens };
+
+      const strippedUser = stripUserOfSensitiveData(newUser);
+      return { ...strippedUser, ...tokens };
     } catch (error) {
       if (error.code === 'P2002') {
         // Unique constraint failed
         throw new ConflictException('User already exists');
+      } else {
+        console.log(error);
+        throw new HttpException(
+          'An error occurred while registering user',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
       }
-      throw new HttpException(
-        'An error occurred while registering user',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
     }
   }
 
   async login(loginUserDto: LoginUserDto) {
     try {
-      const user = await this.userModel.findOne({
-        email: loginUserDto.email,
-      });
+      let user = await this.userModel
+        .findOne({
+          email: loginUserDto.email,
+        })
+        .exec();
 
       if (!user) throw new NotFoundException('User not found');
 
@@ -116,10 +112,16 @@ export class AuthService {
         tokens.refresh_token,
       );
 
-      delete user.password; // Remove password from response
       await this.usersService.connectUser(user._id);
+      user = await user.populate('settings');
+      user = await user.populate({
+        path: 'status',
+        select: 'statusMessage online',
+      });
+
+      const strippedUser = stripUserOfSensitiveData(user.toObject());
       return {
-        ...user.toObject(),
+        ...strippedUser,
         ...tokens,
       };
     } catch (error) {
@@ -153,8 +155,9 @@ export class AuthService {
       );
       await this.updateRefreshToken(user._id as Types.ObjectId, refresh_token);
 
+      const strippedUser = stripUserOfSensitiveData(user.toObject());
       return {
-        ...user.toObject(),
+        ...strippedUser,
         access_token,
         refresh_token,
       };

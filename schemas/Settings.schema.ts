@@ -20,8 +20,17 @@ import { Document, Types } from 'mongoose';
 export class Settings extends Document {
   _id: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
+
   @Prop({ required: false })
   backgroundImage?: string;
+
+  @Prop({ required: false })
+  glowColor?: string;
+
+  @Prop({ required: false })
+  tintColor?: string;
 
   @Prop({ required: false })
   receiveNotifications?: boolean;

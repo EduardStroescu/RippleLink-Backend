@@ -5,6 +5,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Model } from 'mongoose';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { User } from 'schemas/User.schema';
+import { stripUserOfSensitiveData } from 'src/lib/utils';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -26,7 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       .exec();
     if (!user) throw new UnauthorizedException();
 
-    delete user.password;
-    return user.toObject();
+    const strippedUser = stripUserOfSensitiveData(user.toObject());
+    return { ...strippedUser };
   }
 }

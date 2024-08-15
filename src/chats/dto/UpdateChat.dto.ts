@@ -5,13 +5,9 @@ export class UpdateChatDto {
 
   type?: 'group' | 'dm';
 
-  userId: string;
+  userIds: string[];
 
   messageType: 'text' | 'image' | 'video' | 'file' | 'audio';
 
   lastMessage: string;
-
-  ongoingCall?: {
-    participants: { userId: User; signal: string }[];
-  };
 }

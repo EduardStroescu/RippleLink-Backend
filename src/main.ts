@@ -9,6 +9,7 @@ import {
 } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ServerOptions } from 'socket.io';
+import { json, urlencoded } from 'express';
 
 class CustomIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions): any {
@@ -25,6 +26,9 @@ async function bootstrap() {
   app.useWebSocketAdapter(new CustomIoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['/'] });
   const PORT = process.env.PORT ?? 3000;
+
+  app.use(json({ limit: '2mb' }));
+  app.use(urlencoded({ extended: true, limit: '2mb' }));
 
   app.useGlobalPipes(new ValidationPipe());
 

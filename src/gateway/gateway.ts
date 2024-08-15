@@ -1,4 +1,3 @@
-import { OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -10,33 +9,30 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { error } from 'console';
 import { Types } from 'mongoose';
 import { Chat } from 'schemas/Chat.schema';
 import { Message } from 'schemas/Message.schema';
 import { Server, Socket } from 'socket.io';
-import { ChatsService } from 'src/chats/chats.service';
+import { CallsService } from 'src/calls/calls.service';
 import { MessagesService } from 'src/messages/messages.service';
 import { RedisService } from 'src/redis/redis.service';
 
 @WebSocketGateway({ cors: { origin: process.env.CLIENT_URL } })
-export class Gateway
-  implements OnModuleInit, OnGatewayConnection, OnGatewayDisconnect
-{
+export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   constructor(
     private readonly messagesService: MessagesService,
-    private readonly chatService: ChatsService,
+    private readonly callService: CallsService,
     private readonly redisService: RedisService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
-  onModuleInit() {
-    this.server.on('connection', (socket) => {});
-  }
+  // onModuleInit() {
+  //   this.server.on('connection', (socket) => {});
+  // }
 
   async handleConnection(@ConnectedSocket() socket: Socket) {
     const token = socket.handshake.headers['authorization'];
@@ -181,8 +177,6 @@ export class Gateway
     }
   }
 
-  // TODO: CHECK IF THE UPDATED MESSAGE IS THE LATEST MESSAGE IN THE CHAT AND UPDATE CHAT ALSO IF IT IS
-  // IMPLEMENTED: CHECK IF FIXED
   @SubscribeMessage('updateMessage')
   async updateMessage(
     @ConnectedSocket() client: Socket,
@@ -320,6 +314,162 @@ export class Gateway
     }
   }
 
+  @SubscribeMessage('joinCall')
+  async handleJoinCall(
+    @MessageBody()
+    body: {
+      chatId: string;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId } = body;
+    const { _id } = client.handshake.query;
+
+    try {
+      const updatedCall = await this.callService.joinCall(
+        new Types.ObjectId(_id as string),
+        new Types.ObjectId(chatId),
+      );
+
+      client.emit('callJoined', { call: updatedCall });
+    } catch (err) {
+      const error = {
+        message: 'Failed to join call',
+      };
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage('initiateCall')
+  async handleCallUser(
+    @MessageBody()
+    body: {
+      chatId: string;
+      offer?: any;
+      participantId: string;
+      saveToDb?: boolean;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId, offer, participantId, saveToDb } = body;
+    const { _id } = client.handshake.query;
+    try {
+      if (saveToDb) {
+        const updatedCall = await this.callService.callUpdate({
+          _id: new Types.ObjectId(_id as string),
+          chatId: new Types.ObjectId(chatId),
+          to: new Types.ObjectId(participantId),
+          offer,
+        });
+        await this.updateCalls(updatedCall);
+      }
+      client.broadcast
+        .to(participantId)
+        .emit('callCreated', { offer, participantId: _id });
+    } catch (err) {
+      const error = {
+        message: 'Failed to create call',
+      };
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage('sendCallAnswer')
+  async handleMakeAnswer(
+    @MessageBody()
+    body: {
+      chatId: string;
+      answer?: any;
+      participantId: string;
+      saveToDb?: boolean;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId, answer, participantId, saveToDb } = body;
+    const { _id } = client.handshake.query;
+
+    try {
+      if (saveToDb) {
+        const updatedCall = await this.callService.callUpdate({
+          _id: new Types.ObjectId(_id as string),
+          chatId: new Types.ObjectId(chatId),
+          to: new Types.ObjectId(participantId),
+          answer,
+        });
+        await this.updateCalls(updatedCall);
+      }
+      client.broadcast
+        .to(participantId)
+        .emit('callAnswered', { answer, participantId: _id });
+    } catch (err) {
+      const error = {
+        message: 'Failed to send call answer',
+        error: err.message,
+      };
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage('saveIceCandidates')
+  async handleSaveIceCandidates(
+    @MessageBody()
+    body: {
+      chatId: string;
+      candidatesType: 'offer' | 'answer';
+      iceCandidates: string;
+      to: string;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId, candidatesType, iceCandidates, to } = body;
+    const { _id } = client.handshake.query;
+
+    try {
+      const updatedCall = await this.callService.queueIceCandidates({
+        _id: new Types.ObjectId(_id as string),
+        chatId: new Types.ObjectId(chatId),
+        iceCandidates,
+        candidatesType,
+        to: new Types.ObjectId(to),
+      });
+
+      await this.updateCalls(updatedCall);
+    } catch (err) {
+      const error = {
+        message: 'Failed to update ice candidates',
+        error: err.message,
+      };
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage('endCall')
+  async handleEndCall(
+    @MessageBody() body: { callId: string; answer: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { callId } = body;
+    const { _id } = client.handshake.query;
+
+    try {
+      const { updatedCall, callEnded } = await this.callService.endCall(
+        new Types.ObjectId(_id as string),
+        new Types.ObjectId(callId),
+      );
+      if (!callEnded) {
+        await this.updateCalls(updatedCall);
+      } else {
+        await this.deleteCalls({ ...updatedCall, callEnded });
+      }
+    } catch (err) {
+      const error = {
+        message: 'Failed to end call',
+        error: err.message,
+      };
+      this.handleError(client, error);
+    }
+  }
+
   async updateChat(updatedChat: Chat) {
     try {
       const onlineUsers = await this.redisService.getOnlineUsers();
@@ -347,85 +497,52 @@ export class Gateway
     }
   }
 
-  @SubscribeMessage('initiateCall')
-  async handleCallUser(
-    @MessageBody() body: { chatId: string; offer: any; saveToDb?: boolean },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { chatId, offer, saveToDb } = body;
-    const { _id } = client.handshake.query;
+  private async updateCalls(updatedCall) {
     try {
-      if (saveToDb) {
-        const updatedChat = await this.chatService.callUpdate(
-          new Types.ObjectId(_id as string),
-          new Types.ObjectId(chatId),
-          offer,
-        );
-        await this.updateChat(updatedChat);
-      }
-      client.broadcast.to(chatId).emit('callCreated', { offer });
-    } catch (err) {
-      const error = {
-        message: 'Failed to create call',
-      };
-      this.handleError(client, error);
-    }
-  }
-
-  @SubscribeMessage('sendCallAnswer')
-  async handleMakeAnswer(
-    @MessageBody() body: { chatId: string; answer: any; saveToDb?: boolean },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { chatId, answer, saveToDb } = body;
-    const { _id } = client.handshake.query;
-
-    try {
-      if (saveToDb) {
-        const updatedChat = await this.chatService.callUpdate(
-          new Types.ObjectId(_id as string),
-          new Types.ObjectId(chatId),
-          answer,
-        );
-        await this.updateChat(updatedChat);
-      }
-      client.broadcast.to(chatId).emit('callAnswered', { answer });
-    } catch (err) {
-      const error = {
-        message: 'Failed to send call answer',
-        error: err.message,
-      };
-      this.handleError(client, error);
-    }
-  }
-
-  @SubscribeMessage('endCall')
-  async handleEndCall(
-    @MessageBody() body: { chatId: string; answer: any },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { chatId } = body;
-    const { _id } = client.handshake.query;
-
-    try {
-      const updatedChat = await this.chatService.endCall(
-        new Types.ObjectId(_id as string),
-        new Types.ObjectId(chatId),
+      const onlineUsers = await this.redisService.getOnlineUsers();
+      const onlineUserSet = new Set(onlineUsers);
+      const userIds = updatedCall.chatId.users.map((user) =>
+        user._id.toString(),
+      );
+      const onlineUserIds = userIds.filter((userId) =>
+        onlineUserSet.has(userId),
       );
 
-      await this.updateChat(updatedChat);
+      // Broadcast the updated chat to all online members of the chat
+      if (!!onlineUserIds.length) {
+        this.server.to(onlineUserIds).emit('callsUpdated', {
+          content: updatedCall,
+        });
+      }
     } catch (err) {
-      const error = {
-        message: 'Failed to end call',
-        error: err.message,
-      };
-      this.handleError(client, error);
+      throw err;
+    }
+  }
+
+  private async deleteCalls(deletedCall) {
+    try {
+      const onlineUsers = await this.redisService.getOnlineUsers();
+      const onlineUserSet = new Set(onlineUsers);
+      const userIds = deletedCall.chatId.users.map((user) =>
+        user._id.toString(),
+      );
+      const onlineUserIds = userIds.filter((userId) =>
+        onlineUserSet.has(userId),
+      );
+      // Broadcast the updated chat to all online members of the chat
+      if (!!onlineUserIds.length) {
+        this.server.to(onlineUserIds).emit('callsUpdated', {
+          content: deletedCall,
+        });
+      }
+    } catch (err) {
+      throw err;
     }
   }
 
   private async handleError(client: Socket, error: any) {
     client.emit('error', {
-      message: 'Failed to update chat',
+      message: error.message,
       details: error.message,
     });
   }

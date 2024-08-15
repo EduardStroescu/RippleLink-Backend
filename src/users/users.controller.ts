@@ -21,6 +21,9 @@ import {
 } from '@nestjs/swagger';
 import { CreateUserDto } from 'src/auth/dto';
 import { Types } from 'mongoose';
+import { DeleteUserDto } from './dto/DeleteUser.dto';
+import { GetUser } from 'src/auth/decorator/GetUser.decorator';
+import { ChangePasswordDto } from './dto/ChangePassword.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -72,33 +75,43 @@ export class UsersController {
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
-  @Patch(':id')
+  @Patch('update-details')
   @UsePipes(new ValidationPipe())
   async updateUser(
-    @Param('id') id: string,
+    @GetUser('_id') _id: Types.ObjectId,
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    const updatedUser = await this.usersService.updateUser(
-      new Types.ObjectId(id),
-      updateUserDto,
-    );
-    if (!updatedUser) throw new HttpException('User not found', 404);
-    return updatedUser;
+    return await this.usersService.updateUser(_id, updateUserDto);
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: String })
+  @ApiOkResponse({ status: 200, type: ChangePasswordDto })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
-  @Delete(':id')
-  async deleteUser(@Param('id') id: string) {
-    const deletedUser = await this.usersService.deleteUser(
-      new Types.ObjectId(id),
-    );
-    if (!deletedUser) throw new HttpException('User not found', 404);
-    return deletedUser;
+  @Patch('update-password')
+  @UsePipes(new ValidationPipe())
+  async changePassword(
+    @GetUser('_id') _id: Types.ObjectId,
+    @Body() changePasswordDto: ChangePasswordDto,
+  ) {
+    return await this.usersService.changePassword(_id, changePasswordDto);
+  }
+
+  @ApiBearerAuth()
+  @ApiOkResponse({ status: 200, type: String, description: 'User deleted' })
+  @ApiUnauthorizedResponse({
+    status: 401,
+    description: 'Invalid access_token token',
+  })
+  @UseGuards(JwtGuard)
+  @Delete()
+  async deleteUser(
+    @GetUser('_id') _id: Types.ObjectId,
+    @Body() deleteUserDto: DeleteUserDto,
+  ) {
+    return await this.usersService.deleteUser(_id, deleteUserDto);
   }
 }

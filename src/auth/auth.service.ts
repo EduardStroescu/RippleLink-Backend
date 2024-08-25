@@ -54,12 +54,7 @@ export class AuthService {
       }
 
       newUser = await newUser.save();
-
-      const userStatus = await this.statusModel.create({
-        userId: newUser._id,
-        online: true,
-      });
-      await userStatus.save();
+      await this.usersService.connectUser(newUser._id);
 
       const tokens = await this.signTokens(newUser._id, newUser.email);
       await this.updateRefreshToken(newUser._id, tokens.refresh_token);
@@ -76,7 +71,6 @@ export class AuthService {
         // Unique constraint failed
         throw new ConflictException('User already exists');
       } else {
-        console.log(error);
         throw new HttpException(
           'An error occurred while registering user',
           HttpStatus.INTERNAL_SERVER_ERROR,

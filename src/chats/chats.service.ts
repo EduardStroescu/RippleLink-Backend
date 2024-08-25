@@ -90,7 +90,6 @@ export class ChatsService {
 
       return finalChat.toObject();
     } catch (err) {
-      console.log(err);
       throw new HttpException(
         'Unable to create chat',
         HttpStatus.INTERNAL_SERVER_ERROR,

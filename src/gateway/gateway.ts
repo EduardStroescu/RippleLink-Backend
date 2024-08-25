@@ -432,7 +432,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         candidatesType,
         to: new Types.ObjectId(to),
       });
-
+      if (!updatedCall) return;
       await this.updateCalls(updatedCall);
     } catch (err) {
       const error = {

@@ -10,6 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { HealthModule } from './health/health.module';
 import { RedisModule } from './redis/redis.module';
 import { CallsModule } from './calls/calls.module';
+import { StatusModule } from './status/status.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { CallsModule } from './calls/calls.module';
     ChatsModule,
     MessagesModule,
     CallsModule,
+    StatusModule,
     HealthModule,
   ],
 })

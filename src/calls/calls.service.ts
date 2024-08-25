@@ -244,6 +244,7 @@ export class CallsService implements OnModuleInit {
         select: 'displayName avatarUrl',
       })
       .exec();
+    if (!updatedCall) return;
     return updatedCall.toObject();
   }
 
@@ -281,9 +282,13 @@ export class CallsService implements OnModuleInit {
       }
 
       // Filter out the participant to be removed
-      const updatedParticipants = call.participants.filter(
-        (participant) => !participant.userId._id.equals(_id),
-      );
+      const updatedParticipants = call
+        .toObject()
+        .participants.filter((participant) =>
+          participant?.userId?._id
+            ? !participant.userId._id.equals(_id)
+            : false,
+        );
 
       // Update the ongoingCall field based on the remaining participants
       if (updatedParticipants.length === 0) {

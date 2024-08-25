@@ -15,6 +15,7 @@ import { stripUserOfSensitiveData } from 'src/lib/utils';
 import { DeleteUserDto } from './dto/DeleteUser.dto';
 import * as bcrypt from 'bcrypt';
 import { ChangePasswordDto } from './dto/ChangePassword.dto';
+import ChangeAvatarDto from './dto/ChangeAvatar.dto';
 
 @Injectable()
 export class UsersService {
@@ -132,6 +133,28 @@ export class UsersService {
       return strippedUser;
     } catch (err) {
       throw new BadRequestException(err);
+    }
+  }
+
+  async changeAvatar(_id: Types.ObjectId, changeAvatarDto: ChangeAvatarDto) {
+    try {
+      const user = await this.userModel.findById(_id).exec();
+
+      if (!user) throw new BadRequestException('User not found');
+      const currentAvatar = user.avatarUrl;
+      if (currentAvatar) {
+        await this.cloudinaryService.removeFile(`${user.email}-avatar`);
+      }
+      const newUserAvatar = await this.cloudinaryService.uploadAvatar(
+        changeAvatarDto.avatar,
+        user.email,
+      );
+      user.avatarUrl = newUserAvatar.url;
+      await user.save();
+
+      return { avatarUrl: newUserAvatar.url };
+    } catch (err) {
+      throw new InternalServerErrorException(err);
     }
   }
 

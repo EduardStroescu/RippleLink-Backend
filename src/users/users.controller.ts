@@ -24,6 +24,7 @@ import { Types } from 'mongoose';
 import { DeleteUserDto } from './dto/DeleteUser.dto';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { ChangePasswordDto } from './dto/ChangePassword.dto';
+import ChangeAvatarDto from './dto/ChangeAvatar.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -82,6 +83,22 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return await this.usersService.updateUser(_id, updateUserDto);
+  }
+
+  @ApiBearerAuth()
+  @ApiOkResponse({ status: 200, type: UpdateUserDto })
+  @ApiUnauthorizedResponse({
+    status: 401,
+    description: 'Invalid access_token token',
+  })
+  @UseGuards(JwtGuard)
+  @Patch('change-avatar')
+  @UsePipes(new ValidationPipe())
+  async changeAvatar(
+    @GetUser('_id') _id: Types.ObjectId,
+    @Body() updateAvatarDto: ChangeAvatarDto,
+  ) {
+    return await this.usersService.changeAvatar(_id, updateAvatarDto);
   }
 
   @ApiBearerAuth()

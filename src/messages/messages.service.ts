@@ -73,7 +73,7 @@ export class MessagesService {
         })
         .populate({
           path: 'lastMessage',
-          populate: { path: 'senderId', select: '_id, displayName' },
+          populate: { path: 'senderId', select: 'displayName' },
         });
 
       const interlocutorId = newChat
@@ -89,7 +89,7 @@ export class MessagesService {
 
       newMessage = await newMessage.populate({
         path: 'senderId',
-        select: '_id, displayName',
+        select: 'displayName',
       });
       return { newMessage: newMessage.toObject(), newChat: newChat.toObject() };
     } catch (err) {
@@ -134,7 +134,7 @@ export class MessagesService {
           })
           .populate({
             path: 'lastMessage',
-            populate: { path: 'senderId', select: '_id, displayName' },
+            populate: { path: 'senderId', select: 'displayName' },
           })
           .exec();
       } else {
@@ -206,6 +206,7 @@ export class MessagesService {
           })
           .populate({
             path: 'lastMessage',
+            populate: { path: 'senderId', select: 'displayName' },
           })
           .exec();
       }
@@ -247,7 +248,7 @@ export class MessagesService {
       })
       .populate({
         path: 'lastMessage',
-        populate: { path: 'senderId', select: '_id, displayName' },
+        populate: { path: 'senderId', select: 'displayName' },
       })
       .exec();
     return updatedChat.toObject();
@@ -262,7 +263,7 @@ export class MessagesService {
         .find({ chatId: chatId })
         .populate({
           path: 'senderId',
-          select: '_id, displayName',
+          select: 'displayName',
         })
         .populate({ path: 'chatId' })
         .sort({ createdAt: 1 })

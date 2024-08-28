@@ -38,18 +38,6 @@ export class UsersController {
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
-  @Get()
-  async getAllUsers() {
-    return await this.usersService.getAllUsers();
-  }
-
-  @ApiBearerAuth()
-  @ApiOkResponse({ status: 200 })
-  @ApiUnauthorizedResponse({
-    status: 401,
-    description: 'Invalid access_token token',
-  })
-  @UseGuards(JwtGuard)
   @Get(':id')
   async getUser(@Param('id') id: string) {
     return await this.usersService.getUserById(new Types.ObjectId(id));

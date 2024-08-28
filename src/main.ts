@@ -70,6 +70,10 @@ async function bootstrap() {
     ],
   });
 
-  await app.listen(PORT, () => console.log`"Running on PORT ${PORT}`);
+  await app.listen(
+    PORT,
+    '0.0.0.0',
+    () => console.log`"Running on PORT ${PORT}`,
+  );
 }
 bootstrap();

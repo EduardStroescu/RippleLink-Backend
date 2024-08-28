@@ -5,7 +5,6 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Model } from 'mongoose';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { User } from 'schemas/User.schema';
-import { stripUserOfSensitiveData } from 'src/lib/utils';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -23,11 +22,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   async validate(payload: { sub: number; email: string }) {
     const user = await this.userModel
       .findById(payload.sub)
+      .select('-password')
       .populate({ path: 'chats' })
       .exec();
     if (!user) throw new UnauthorizedException();
 
-    const strippedUser = stripUserOfSensitiveData(user.toObject());
-    return { ...strippedUser };
+    return user.toObject();
   }
 }

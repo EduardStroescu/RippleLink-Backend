@@ -30,10 +30,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly configService: ConfigService,
   ) {}
 
-  // onModuleInit() {
-  //   this.server.on('connection', (socket) => {});
-  // }
-
   async handleConnection(@ConnectedSocket() socket: Socket) {
     const token = socket.handshake.headers['authorization'];
     const { _id } = socket.handshake.query;
@@ -319,19 +315,48 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody()
     body: {
       chatId: string;
+      isInitiator: boolean;
     },
     @ConnectedSocket() client: Socket,
   ) {
-    const { chatId } = body;
+    const { chatId, isInitiator } = body;
     const { _id } = client.handshake.query;
 
     try {
-      const updatedCall = await this.callService.joinCall(
-        new Types.ObjectId(_id as string),
-        new Types.ObjectId(chatId),
-      );
+      if (isInitiator) {
+        const updatedCall = await this.callService.joinCall(
+          new Types.ObjectId(_id as string),
+          new Types.ObjectId(chatId),
+        );
+        client.emit('callJoined', { call: updatedCall });
+      } else {
+        const call = await this.callService.getCall(new Types.ObjectId(chatId));
 
-      client.emit('callJoined', { call: updatedCall });
+        const checkInterval = setInterval(async () => {
+          const iceSent = await this.callService.checkIfEveryoneInCallSentIce(
+            new Types.ObjectId(call._id),
+            new Types.ObjectId(_id as string),
+          );
+
+          if (iceSent) {
+            clearInterval(checkInterval);
+            clearTimeout(timeout);
+
+            const updatedCall = await this.callService.joinCall(
+              new Types.ObjectId(_id as string),
+              new Types.ObjectId(chatId),
+            );
+
+            client.emit('callJoined', { call: updatedCall });
+          }
+        }, 1000);
+
+        const maxWaitTime = 10000; // 10 seconds
+        const timeout = setTimeout(() => {
+          clearInterval(checkInterval);
+          client.emit('callJoined', { error: 'Call timeout' });
+        }, maxWaitTime);
+      }
     } catch (err) {
       const error = {
         message: 'Failed to join call',
@@ -355,13 +380,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { _id } = client.handshake.query;
     try {
       if (saveToDb) {
-        const updatedCall = await this.callService.callUpdate({
+        await this.callService.callUpdate({
           _id: new Types.ObjectId(_id as string),
           chatId: new Types.ObjectId(chatId),
           to: new Types.ObjectId(participantId),
           offer,
         });
-        await this.updateCalls(updatedCall);
       }
       client.broadcast
         .to(participantId)
@@ -387,7 +411,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { chatId, answer, participantId, saveToDb } = body;
     const { _id } = client.handshake.query;
-
     try {
       if (saveToDb) {
         const updatedCall = await this.callService.callUpdate({

@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://screensynced.vercel.app/" target="blank"><img src="https://raw.githubusercontent.com/EduardStroescu/PubImages/main/WebsiteImages/rippleLink.jpg" alt="RippleLink Preview" /></a>
+  <a href="https://ripple-link.vercel.app" target="blank"><img src="https://raw.githubusercontent.com/EduardStroescu/PubImages/main/WebsiteImages/rippleLink.jpg" alt="RippleLink Preview" /></a>
 </p>
 
 # RippleLink Backend
@@ -7,12 +7,12 @@
 ### Links to the Frontend:
 
 https://github.com/EduardStroescu/RippleLink-Frontend - Github Repo
-To Be Added - Live Demo
+https://ripple-link.vercel.app - Live Demo
 
 ### Links to backend main page and swagger documentation:
 
-To Be Added - Live Demo
-To be Added - Swagger Documentation
+https://ripple-link.koyeb.app - Live Demo
+https://ripple-link.koyeb.app/api/docs - Swagger Documentation
 
 # Introduction
 
@@ -96,9 +96,18 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
-## Test
+## Building for Production
 
 ```bash
-# e2e tests
-$ npm run test:e2e
+
+# build docker image from Dockerfile
+docker build -t username/ripple-link:latest .
+
+# push to DockerHub
+docker push username/ripple-link:latest
+
+push repo to GitHub
+
+deploy to e.g. koyeb from github repo - requires Dockerfile.koyeb for koyeb to use docker-compose
+
 ```

@@ -19,6 +19,7 @@ export class ChatsService {
     @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
+  //TODO FIX THIS FOR USERS TRYING TO CREATE CHATS WITH CHATS ONLY DELETED ON THEIR SIDE
   async createChat(
     userId: Types.ObjectId,
     createChatDto: CreateChatDto,
@@ -85,11 +86,12 @@ export class ChatsService {
       });
       finalChat = await finalChat.populate({
         path: 'lastMessage',
-        populate: { path: 'senderId', select: '_id, displayName' },
+        populate: { path: 'senderId', select: 'displayName' },
       });
 
       return finalChat.toObject();
     } catch (err) {
+      console.log(err);
       throw new HttpException(
         'Unable to create chat',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -108,7 +110,7 @@ export class ChatsService {
         })
         .populate({
           path: 'lastMessage',
-          populate: { path: 'senderId', select: '_id, displayName' },
+          populate: { path: 'senderId', select: 'displayName' },
         })
         .sort({ updatedAt: -1 })
         .exec();

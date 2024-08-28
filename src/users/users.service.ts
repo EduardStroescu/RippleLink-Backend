@@ -26,27 +26,15 @@ export class UsersService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
-  async getAllUsers() {
-    try {
-      const response = await this.userModel.find().populate(['chats status']);
-      const strippedUsers = response.map((user) =>
-        stripUserOfSensitiveData(user),
-      );
-      return strippedUsers;
-    } catch (err) {
-      throw new InternalServerErrorException(err);
-    }
-  }
-
   async getUserById(userId: Types.ObjectId) {
     try {
-      const user = await this.userModel
+      return await this.userModel
         .findById(userId)
+        .select(
+          '-password -firstName -lastName -email -refresh_token -createdAt -updatedAt',
+        )
         .populate('status')
         .exec();
-
-      const strippedUser = stripUserOfSensitiveData(user.toObject());
-      return strippedUser;
     } catch (err) {
       throw new InternalServerErrorException(err);
     }
@@ -126,11 +114,12 @@ export class UsersService {
 
   async updateUser(_id: Types.ObjectId, updateUserDto: UpdateUserDto) {
     try {
-      const user = await this.userModel.findByIdAndUpdate(_id, updateUserDto, {
-        new: true,
-      });
-      const strippedUser = stripUserOfSensitiveData(user.toObject());
-      return strippedUser;
+      return await this.userModel
+        .findByIdAndUpdate(_id, updateUserDto, {
+          new: true,
+        })
+        .select('-password')
+        .exec();
     } catch (err) {
       throw new BadRequestException(err);
     }
@@ -190,11 +179,12 @@ export class UsersService {
   async getUserByDisplayName(displayName: string) {
     try {
       const regex = new RegExp(displayName, 'i');
-      const response = this.userModel
+      return await this.userModel
         .find({ displayName: { $regex: regex } })
+        .select(
+          '-password -settings -firstName -lastName -email -refresh_token -createdAt -updatedAt -status',
+        )
         .exec();
-      const strippedUser = stripUserOfSensitiveData(response);
-      return strippedUser;
     } catch (err) {
       throw new InternalServerErrorException(err);
     }

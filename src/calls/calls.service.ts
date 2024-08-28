@@ -101,6 +101,44 @@ export class CallsService implements OnModuleInit {
     }
   }
 
+  async getCall(chatId: Types.ObjectId) {
+    try {
+      return await this.callModel.findOne({ chatId }).exec();
+    } catch (err) {
+      throw new BadRequestException('Unable to get call');
+    }
+  }
+
+  async checkIfEveryoneInCallSentIce(
+    callId: Types.ObjectId,
+    _id: Types.ObjectId,
+  ): Promise<boolean> {
+    try {
+      const call = await this.callModel.findById(callId).exec();
+      if (!call) return false;
+
+      const participants = call.participants;
+
+      // Ensure each participant (excluding the checking user) has sent ICE candidates for the checking user
+      const iceSent = participants
+        .filter((participant) => !participant.userId.equals(_id))
+        .every((participant) =>
+          participant.offers.some(
+            (offer) =>
+              offer.to.equals(_id) &&
+              Array.isArray(offer.iceCandidates) &&
+              offer.iceCandidates.length > 0,
+          ),
+        );
+
+      return iceSent;
+    } catch (err) {
+      throw new BadRequestException(
+        'Unable to check if everyone sent ICE candidates',
+      );
+    }
+  }
+
   async callUpdate({
     _id,
     chatId,
@@ -115,13 +153,25 @@ export class CallsService implements OnModuleInit {
     to: Types.ObjectId;
   }) {
     try {
+      // Check if the user is still part of the chat
       const user = await this.userModel.findById(_id).exec();
       if (!user || !user.chats.some((chat) => chat._id.equals(chatId))) {
         throw new BadRequestException('You are not a member of this chat');
       }
 
-      let updatedCall = await this.callModel.findOne({ chatId }).exec();
+      // Check if the user is still a participant in the call
+      let updatedCall = await this.callModel
+        .findOne({
+          chatId,
+          'participants.userId': _id,
+        })
+        .exec();
 
+      if (!updatedCall) {
+        throw new BadRequestException('User is no longer part of the call');
+      }
+
+      // Find the existing participant in the call
       const existingParticipant = updatedCall.participants.find((participant) =>
         participant.userId.equals(_id),
       );
@@ -161,8 +211,10 @@ export class CallsService implements OnModuleInit {
         }
       }
 
+      // Save the updated call data
       updatedCall = await updatedCall.save();
 
+      // Populate the updated call data
       updatedCall = await updatedCall.populate({
         path: 'chatId',
         populate: {
@@ -251,14 +303,31 @@ export class CallsService implements OnModuleInit {
   async flushIceCandidatesQueue() {
     if (this.iceCandidatesQueue.length > 0) {
       try {
-        // Perform the bulk write operation
-        await this.callModel.bulkWrite(this.iceCandidatesQueue);
+        const validOperations = [];
 
-        // Clear the queue after successful write
+        for (const operation of this.iceCandidatesQueue) {
+          const { filter } = operation.updateOne;
+          const { chatId, 'participants.userId': userId } = filter;
+
+          // Verify if the user is still part of the call
+          const isUserInCall = await this.callModel.exists({
+            chatId,
+            'participants.userId': userId,
+          });
+
+          // Only include the operation if the user is still part of the call
+          if (isUserInCall) {
+            validOperations.push(operation);
+          }
+        }
+
+        // Perform the bulk write operation only with valid operations
+        if (validOperations.length > 0) {
+          await this.callModel.bulkWrite(validOperations);
+        }
+
         this.iceCandidatesQueue = [];
       } catch (err) {
-        console.error('Error during bulk write:', err);
-        // Optionally, implement retry logic if needed
         throw new Error('Error during bulk write');
       }
     }
@@ -266,7 +335,7 @@ export class CallsService implements OnModuleInit {
 
   async endCall(_id: Types.ObjectId, callId: Types.ObjectId): Promise<any> {
     try {
-      let call = await this.callModel
+      const call = await this.callModel
         .findById(callId)
         .populate({
           path: 'chatId',
@@ -277,34 +346,39 @@ export class CallsService implements OnModuleInit {
           select: 'displayName avatarUrl',
         })
         .exec();
+
       if (!call) {
-        throw new Error('Chat or ongoing call not found');
+        throw new BadRequestException('Chat or ongoing call not found');
+      }
+
+      // Ensure the user is part of the call before proceeding
+      const isUserInCall = call.participants.some((participant) =>
+        participant?.userId?._id.equals(_id),
+      );
+
+      if (!isUserInCall) {
+        throw new BadRequestException('User is not part of this call');
       }
 
       // Filter out the participant to be removed
-      const updatedParticipants = call
-        .toObject()
-        .participants.filter((participant) =>
-          participant?.userId?._id
-            ? !participant.userId._id.equals(_id)
-            : false,
-        );
+      const updatedParticipants = call.participants.filter((participant) =>
+        participant?.userId?._id ? !participant.userId._id.equals(_id) : false,
+      );
 
-      // Update the ongoingCall field based on the remaining participants
       if (updatedParticipants.length === 0) {
-        // If no participants are left, remove the call
+        // No participants left, delete the call
         await this.callModel.deleteOne({ _id: call._id }).exec();
         return { updatedCall: call.toObject(), callEnded: true };
       } else {
-        // Update participants if there are any left
+        // Update the call with remaining participants
         call.participants = updatedParticipants;
 
         await call.save();
-        call = await call.populate({
+        await call.populate({
           path: 'chatId',
           populate: { path: 'users', select: 'displayName avatarUrl' },
         });
-        call = await call.populate({
+        await call.populate({
           path: 'participants.userId',
           select: 'displayName avatarUrl',
         });

@@ -132,7 +132,8 @@ export class AuthService {
         .findOne({
           refresh_token: refreshToken,
         })
-        .populate('chats');
+        .select('-password')
+        .populate('chats settings status');
 
       if (!user || user.refresh_token !== refreshToken)
         throw new UnauthorizedException(
@@ -149,9 +150,8 @@ export class AuthService {
       );
       await this.updateRefreshToken(user._id as Types.ObjectId, refresh_token);
 
-      const strippedUser = stripUserOfSensitiveData(user.toObject());
       return {
-        ...strippedUser,
+        ...user.toObject(),
         access_token,
         refresh_token,
       };

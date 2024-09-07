@@ -50,7 +50,7 @@ export class AuthService {
           createUserDto.email,
         );
 
-        newUser.avatarUrl = userAvatar.url;
+        newUser.avatarUrl = userAvatar.secure_url;
       }
 
       newUser = await newUser.save();
@@ -61,8 +61,6 @@ export class AuthService {
 
       newUser = await newUser.populate('status');
       newUser = newUser.toObject();
-
-      await this.usersService.connectUser(newUser._id);
 
       const strippedUser = stripUserOfSensitiveData(newUser);
       return { ...strippedUser, ...tokens };
@@ -110,7 +108,7 @@ export class AuthService {
       user = await user.populate('settings');
       user = await user.populate({
         path: 'status',
-        select: 'statusMessage online',
+        select: 'statusMessage',
       });
 
       const strippedUser = stripUserOfSensitiveData(user.toObject());
@@ -133,7 +131,7 @@ export class AuthService {
           refresh_token: refreshToken,
         })
         .select('-password')
-        .populate('chats settings status');
+        .populate({ path: 'chats settings status', select: 'statusMessage' });
 
       if (!user || user.refresh_token !== refreshToken)
         throw new UnauthorizedException(

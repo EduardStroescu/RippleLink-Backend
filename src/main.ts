@@ -9,13 +9,16 @@ import {
 } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ServerOptions } from 'socket.io';
-import { json, urlencoded } from 'express';
+import { json } from 'express';
+
+const SOCKET_TRANSFER_LIMIT = 10 * 1e6; // max transfer size 10MB
+const JSON_LIMIT = '10mb';
 
 class CustomIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions): any {
     const server = super.createIOServer(port, {
       ...options,
-      maxHttpBufferSize: 1e8, // max transfer size 100MB
+      maxHttpBufferSize: SOCKET_TRANSFER_LIMIT, // max transfer size 10MB
     });
     return server;
   }
@@ -27,22 +30,19 @@ async function bootstrap() {
   app.setGlobalPrefix('api', { exclude: ['/'] });
   const PORT = process.env.PORT ?? 3000;
 
-  app.use(json({ limit: '2mb' }));
-  app.use(urlencoded({ extended: true, limit: '2mb' }));
+  app.use(json({ limit: JSON_LIMIT }));
 
   app.useGlobalPipes(new ValidationPipe());
 
   app.enableCors({
     origin: process.env.CLIENT_URL ?? `http://localhost:5173`,
     credentials: true,
-    // allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept',
-    // methods: 'GET,PUT,PATCH,POST,DELETE,UPDATE,OPTIONS',
   });
 
   const config = new DocumentBuilder()
     .addBearerAuth()
-    .setTitle('ChatApp Api')
-    .setDescription('Chat Api')
+    .setTitle('RippleLink Api')
+    .setDescription('RippleLink Api')
     .setVersion('1.0')
     .build();
 

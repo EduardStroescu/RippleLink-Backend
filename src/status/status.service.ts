@@ -16,6 +16,16 @@ export class StatusService {
     @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
+  async getUserStatus(userId: string) {
+    try {
+      const status = await this.statusModel.findOne({ userId }).exec();
+
+      return status.toObject();
+    } catch (err) {
+      throw new InternalServerErrorException('Unable to get user status');
+    }
+  }
+
   async updateStatus(_id: Types.ObjectId, updateStatusDto: UpdateStatusDto) {
     try {
       const user = await this.userModel

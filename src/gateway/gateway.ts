@@ -155,7 +155,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         message,
         type,
       );
-      const data = await this.redisService.addToCache(
+      const data = await this.redisService.invalidateCacheKey(
         `messages?chatId=${room}`,
         async () => newMessage,
       );
@@ -190,7 +190,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
           message,
         );
 
-      const response = await this.redisService.updateInCache(
+      const response = await this.redisService.invalidateCacheKey(
         `messages?chatId=${room}`,
         async () => updatedMessage,
       );
@@ -225,7 +225,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
           new Types.ObjectId(_id as string),
           new Types.ObjectId(room),
         );
-      const response = await this.redisService.deleteFromCache(
+      const response = await this.redisService.invalidateCacheKey(
         `messages?chatId=${room}`,
         async () => deletedMessage,
       );
@@ -277,7 +277,11 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  async createChat(chatCreatorId: Types.ObjectId, chat: Chat) {
+  async createChat(
+    chatCreatorId: Types.ObjectId,
+    chat: Chat,
+    existingChat: boolean,
+  ) {
     try {
       const onlineUsers = (await this.redisService.getOnlineUsers())?.filter(
         (id) => id !== chatCreatorId.toString(),
@@ -288,16 +292,25 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         .map((user) => user._id.toString())
         .filter((userId) => onlineUserSet.has(userId));
 
-      const newChatUsers = chat.users
-        .filter((user) => user._id.toString() !== chatCreatorId.toString())
-        .map((user) => user._id.toString());
+      const newChatUsers = chat.users.map((user) => user._id.toString());
 
-      newChatUsers.forEach((userId) =>
+      newChatUsers.forEach((userId) => {
+        if (!existingChat) {
+          this.redisService.addToCache(
+            `chats?userId=${userId}`,
+            async () => chat,
+          );
+        } else {
+          this.redisService.updateInCache(
+            `chats?userId=${userId}`,
+            async () => chat,
+          );
+        }
         this.redisService.addToCache(
-          `chats?userId=${userId}`,
-          async () => chat,
-        ),
-      );
+          `messages?chatId=${chat._id}`,
+          async () => chat.lastMessage,
+        );
+      });
 
       // Broadcast the new chat to all online members of the chat
       if (!!onlineUserIds.length) {

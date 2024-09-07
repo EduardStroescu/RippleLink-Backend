@@ -15,7 +15,6 @@ import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
       { name: Status.name, schema: StatusSchema },
       { name: Settings.name, schema: SettingsSchema },
     ]),
-    SettingsModule,
     CloudinaryModule,
   ],
   providers: [UsersService],

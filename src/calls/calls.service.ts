@@ -25,12 +25,12 @@ export class CallsService implements OnModuleInit {
           path: 'chatId',
           populate: {
             path: 'users',
-            select: 'displayName avatarUrl status chats',
+            select: 'displayName avatarUrl chats',
           },
         })
         .populate({
           path: 'participants.userId',
-          select: 'displayName avatarUrl status',
+          select: 'displayName avatarUrl',
         })
         .sort({ updatedAt: -1 })
         .exec();
@@ -42,10 +42,6 @@ export class CallsService implements OnModuleInit {
       );
     }
   }
-
-  //
-  // Never Touch the call related methods below!!!
-  //
 
   async joinCall(_id: Types.ObjectId, chatId: Types.ObjectId) {
     try {

@@ -11,7 +11,6 @@ import UpdateUserDto from './dto/UpdateUser.dto';
 import { Status } from 'schemas/Status.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { Settings } from 'schemas/Settings.schema';
-import { stripUserOfSensitiveData } from 'src/lib/utils';
 import { DeleteUserDto } from './dto/DeleteUser.dto';
 import * as bcrypt from 'bcrypt';
 import { ChangePasswordDto } from './dto/ChangePassword.dto';
@@ -33,7 +32,6 @@ export class UsersService {
         .select(
           '-password -firstName -lastName -email -refresh_token -createdAt -updatedAt',
         )
-        .populate('status')
         .exec();
     } catch (err) {
       throw new InternalServerErrorException(err);
@@ -138,10 +136,10 @@ export class UsersService {
         changeAvatarDto.avatar,
         user.email,
       );
-      user.avatarUrl = newUserAvatar.url;
+      user.avatarUrl = newUserAvatar.secure_url;
       await user.save();
 
-      return { avatarUrl: newUserAvatar.url };
+      return { avatarUrl: newUserAvatar.secure_url };
     } catch (err) {
       throw new InternalServerErrorException(err);
     }

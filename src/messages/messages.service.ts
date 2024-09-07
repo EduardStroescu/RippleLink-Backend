@@ -45,7 +45,7 @@ export class MessagesService {
           newMessage = await this.messageModel.create({
             senderId: userId,
             chatId: room,
-            content: contentUrl.url,
+            content: contentUrl.secure_url,
             type: type,
           });
         }
@@ -68,8 +68,7 @@ export class MessagesService {
         )
         .populate({
           path: 'users',
-          select: 'displayName avatarUrl status',
-          populate: { path: 'status' },
+          select: 'displayName avatarUrl',
         })
         .populate({
           path: 'lastMessage',
@@ -129,8 +128,7 @@ export class MessagesService {
           .findById(room)
           .populate({
             path: 'users',
-            select: 'displayName avatarUrl status',
-            populate: { path: 'status' },
+            select: 'displayName avatarUrl',
           })
           .populate({
             path: 'lastMessage',
@@ -201,8 +199,7 @@ export class MessagesService {
           )
           .populate({
             path: 'users',
-            select: 'displayName avatarUrl status',
-            populate: { path: 'status' },
+            select: 'displayName avatarUrl',
           })
           .populate({
             path: 'lastMessage',
@@ -228,47 +225,78 @@ export class MessagesService {
   }
 
   async readMessage(userId: Types.ObjectId, room: Types.ObjectId) {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
+    try {
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      if (!user.chats.some((chat) => chat._id.equals(room))) {
+        throw new NotFoundException('User not in chat');
+      }
+      await this.messageModel.updateMany(
+        { chatId: room, senderId: { $ne: userId }, read: false },
+        { $set: { read: true } },
+      );
+      const updatedChat = await this.chatsModel
+        .findById(room)
+        .populate({
+          path: 'users',
+          select: 'displayName avatarUrl',
+        })
+        .populate({
+          path: 'lastMessage',
+          populate: { path: 'senderId', select: 'displayName' },
+        })
+        .exec();
+      return updatedChat.toObject();
+    } catch (err) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      throw new HttpException(
+        'Unable to delete message',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
-    if (!user.chats.some((chat) => chat._id.equals(room))) {
-      throw new NotFoundException('User not in chat');
-    }
-    await this.messageModel.updateMany(
-      { chatId: room, senderId: { $ne: userId }, read: false },
-      { $set: { read: true } },
-    );
-    const updatedChat = await this.chatsModel
-      .findById(room)
-      .populate({
-        path: 'users',
-        select: 'displayName avatarUrl status',
-        populate: { path: 'status' },
-      })
-      .populate({
-        path: 'lastMessage',
-        populate: { path: 'senderId', select: 'displayName' },
-      })
-      .exec();
-    return updatedChat.toObject();
   }
 
-  async getAllMessages(userId: Types.ObjectId, chatId: Types.ObjectId) {
+  async getAllMessages(
+    userId: Types.ObjectId,
+    chatId: Types.ObjectId,
+    cursor?: string,
+    limit: number = 20,
+  ) {
     if (!userId || !chatId) {
       throw new BadRequestException('Invalid input');
     }
+
     try {
-      const data = await this.messageModel
-        .find({ chatId: chatId })
+      const query: any = { chatId };
+      if (cursor) {
+        query.createdAt = { $lt: new Date(cursor) };
+      }
+
+      const messages = await this.messageModel
+        .find(query)
         .populate({
           path: 'senderId',
-          select: 'displayName',
+          select: '_id, displayName',
         })
         .populate({ path: 'chatId' })
-        .sort({ createdAt: 1 })
+        .sort({ createdAt: -1 }) // Sort from newest to oldest
+        .limit(limit)
         .exec();
-      return data;
+
+      const sortedMessages = messages.reverse();
+
+      // Prepare the next cursor (oldest message's `createdAt`)
+      const nextCursor =
+        messages.length > 0 ? messages[0].createdAt.toISOString() : null;
+
+      return {
+        messages: sortedMessages,
+        nextCursor,
+      };
     } catch (err) {
       if (err instanceof HttpException) {
         throw err;

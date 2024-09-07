@@ -15,11 +15,6 @@ import { UpdateSettingsDto } from './dto/UpdateSettings.dto';
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
-  @Get()
-  async getSettings(@GetUser('_id') userId: string) {
-    return this.settingsService.getSettings(userId);
-  }
-
   @ApiBearerAuth()
   @ApiCreatedResponse()
   @ApiUnauthorizedResponse({

@@ -8,6 +8,7 @@ import { Redis } from 'ioredis';
 import { Types } from 'mongoose';
 import { ResetRedisCacheDto } from './dto/resetRedisCache.dto';
 import { ConfigService } from '@nestjs/config';
+import { UsersService } from 'src/users/users.service';
 
 type QueryOperator = '$eq' | '$ne' | '$gt' | '$lt' | '$gte' | '$lte';
 type QueryFilter<T> = Partial<Record<keyof T, { [op in QueryOperator]?: any }>>;
@@ -24,6 +25,7 @@ export class RedisService {
   constructor(
     @InjectRedis() private readonly redis: Redis,
     private readonly configService: ConfigService,
+    private readonly usersService: UsersService,
   ) {}
 
   async getOrSetCache<T>(key: string, cb: () => Promise<T>): Promise<T> {
@@ -272,6 +274,7 @@ export class RedisService {
   async disconnectUser(userId: string): Promise<void> {
     try {
       await this.redis.srem('onlineUsers', userId);
+      await this.usersService.disconnectUser(new Types.ObjectId(userId));
     } catch (error) {
       throw new InternalServerErrorException(
         'Error removing user from online set',

@@ -14,10 +14,6 @@ export class SettingsService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
-  async getSettings(userId: string) {
-    return 'settings';
-  }
-
   async updateSettings(userId: string, updateSettingsDto: UpdateSettingsDto) {
     const currentSettings = await this.settingsModel.findOne({
       userId: userId,
@@ -32,7 +28,7 @@ export class SettingsService {
     const fieldsToUpdate = {
       ...updateSettingsDto,
       userId,
-      backgroundImage: userBackgroundImage?.url,
+      backgroundImage: userBackgroundImage?.secure_url,
     };
     if (!userBackgroundImage) delete fieldsToUpdate.backgroundImage;
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { JwtGuard } from 'src/auth/guards';
@@ -33,10 +33,27 @@ export class MessagesController {
   async getAllMessages(
     @Param('chatId') chatId: Types.ObjectId,
     @GetUser('_id') userId: Types.ObjectId,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit = 20,
   ) {
-    return await this.redisService.getOrSetCache(
-      `messages?chatId=${chatId}`,
-      async () => this.messagesService.getAllMessages(userId, chatId),
-    );
+    if (cursor) {
+      return await this.messagesService.getAllMessages(
+        userId,
+        chatId,
+        cursor,
+        limit,
+      );
+    } else {
+      return await this.redisService.getOrSetCache(
+        `messages?chatId=${chatId}`,
+        async () =>
+          await this.messagesService.getAllMessages(
+            userId,
+            chatId,
+            cursor,
+            limit,
+          ),
+      );
+    }
   }
 }

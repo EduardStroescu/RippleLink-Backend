@@ -74,13 +74,12 @@ export class ChatsController {
     @Body() createChatDto: CreateChatDto,
   ) {
     try {
-      const newChat = await this.chatsService.createChat(userId, createChatDto);
-
-      await this.redisService.addToCache(
-        `chats?userId=${userId}`,
-        async () => newChat,
+      const { newChat, wasExistingChat } = await this.chatsService.createChat(
+        userId,
+        createChatDto,
       );
-      await this.gatewayService.createChat(userId, newChat);
+
+      await this.gatewayService.createChat(userId, newChat, wasExistingChat);
       return newChat;
     } catch (error) {
       throw new HttpException(

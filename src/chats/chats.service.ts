@@ -19,11 +19,10 @@ export class ChatsService {
     @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
-  //TODO FIX THIS FOR USERS TRYING TO CREATE CHATS WITH CHATS ONLY DELETED ON THEIR SIDE
   async createChat(
     userId: Types.ObjectId,
     createChatDto: CreateChatDto,
-  ): Promise<Chat> {
+  ): Promise<{ newChat: Chat; wasExistingChat: boolean }> {
     try {
       // Retrieve all users involved in the chat, including the initiating user
       const usersInChat = await this.userModel
@@ -38,25 +37,23 @@ export class ChatsService {
         );
       }
 
-      const existingChats = await this.chatModel.find({
+      let chat = await this.chatModel.findOne({
         users: { $all: [userId, ...createChatDto.userIds] },
+        $expr: { $eq: [{ $size: '$users' }, createChatDto.userIds.length + 1] },
       });
+      let wasExistingChat = false;
 
-      const exactMatchChat = existingChats.find(
-        (chat) => chat.users.length === createChatDto.userIds.length + 1,
-      );
-
-      if (exactMatchChat) {
-        throw new HttpException('Chat already exists', HttpStatus.BAD_REQUEST);
+      if (!chat) {
+        // Create a new chat if no existing chat is found
+        chat = new this.chatModel({
+          users: [userId, ...createChatDto.userIds],
+          type: createChatDto.type || 'dm',
+          name: createChatDto.name || '',
+        });
+        await chat.save();
+      } else {
+        wasExistingChat = true;
       }
-
-      // Create a new chat if no existing chat is found
-      const chat = new this.chatModel({
-        users: [userId, ...createChatDto.userIds],
-        type: createChatDto.type || 'dm',
-        name: createChatDto.name || '',
-      });
-      await chat.save();
 
       // Create a new message (if provided) and associate it with the chat
       const newMessage = new this.messageModel({
@@ -81,17 +78,15 @@ export class ChatsService {
       // Populate the newly created chat with relevant data
       let finalChat = await chat.populate({
         path: 'users',
-        select: 'displayName avatarUrl status',
-        populate: { path: 'status' },
+        select: 'displayName avatarUrl',
       });
       finalChat = await finalChat.populate({
         path: 'lastMessage',
         populate: { path: 'senderId', select: 'displayName' },
       });
 
-      return finalChat.toObject();
+      return { newChat: finalChat.toObject(), wasExistingChat };
     } catch (err) {
-      console.log(err);
       throw new HttpException(
         'Unable to create chat',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -105,8 +100,7 @@ export class ChatsService {
         .find({ _id: { $in: user.chats } })
         .populate({
           path: 'users',
-          select: 'displayName avatarUrl status',
-          populate: { path: 'status' },
+          select: 'displayName avatarUrl',
         })
         .populate({
           path: 'lastMessage',
@@ -123,7 +117,6 @@ export class ChatsService {
     }
   }
 
-  //TODO IMPLEMENT PAGINATION AND CURSORS
   async getSharedFiles(chatId: string) {
     return await this.messageModel
       .find({ chatId: chatId, type: { $ne: 'text' } })

@@ -14,14 +14,10 @@ import { User } from 'schemas/User.schema';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { JwtGuard } from 'src/auth/guards';
 import { CallsService } from './calls.service';
-import { RedisService } from 'src/redis/redis.service';
 
 @Controller('calls')
 export class CallsController {
-  constructor(
-    private readonly callsService: CallsService,
-    private readonly redisService: RedisService,
-  ) {}
+  constructor(private readonly callsService: CallsService) {}
 
   @ApiBearerAuth()
   @ApiOkResponse({

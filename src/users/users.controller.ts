@@ -29,7 +29,7 @@ import ChangeAvatarDto from './dto/ChangeAvatar.dto';
 @ApiTags('Users')
 @Controller('users')
 export class UsersController {
-  constructor(private usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @ApiBearerAuth()
   @ApiOkResponse({ status: 200 })

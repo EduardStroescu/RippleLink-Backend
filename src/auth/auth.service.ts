@@ -14,19 +14,17 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
 import { Model, Types } from 'mongoose';
-import { Status } from 'schemas/Status.schema';
-import { UsersService } from 'src/users/users.service';
 import { stripUserOfSensitiveData } from 'src/lib/utils';
+import { StatusService } from 'src/status/status.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(Status.name) private statusModel: Model<Status>,
-    private jwtService: JwtService,
-    private configService: ConfigService,
-    private readonly usersService: UsersService,
-    private cloudinaryService: CloudinaryService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly statusService: StatusService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async register(createUserDto: CreateUserDto) {
@@ -54,7 +52,7 @@ export class AuthService {
       }
 
       newUser = await newUser.save();
-      await this.usersService.connectUser(newUser._id);
+      await this.statusService.createStatus(newUser._id);
 
       const tokens = await this.signTokens(newUser._id, newUser.email);
       await this.updateRefreshToken(newUser._id, tokens.refresh_token);
@@ -104,7 +102,6 @@ export class AuthService {
         tokens.refresh_token,
       );
 
-      await this.usersService.connectUser(user._id);
       user = await user.populate('settings');
       user = await user.populate({
         path: 'status',
@@ -131,7 +128,8 @@ export class AuthService {
           refresh_token: refreshToken,
         })
         .select('-password')
-        .populate({ path: 'chats settings status', select: 'statusMessage' });
+        .populate({ path: 'settings' })
+        .populate({ path: 'status', select: 'statusMessage' });
 
       if (!user || user.refresh_token !== refreshToken)
         throw new UnauthorizedException(
@@ -162,7 +160,6 @@ export class AuthService {
 
   async logout(userId: Types.ObjectId) {
     await this.updateRefreshToken(userId, '');
-    await this.usersService.disconnectUser(userId);
     return { success: 'Logged out' };
   }
 

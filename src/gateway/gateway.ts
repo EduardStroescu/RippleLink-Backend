@@ -144,9 +144,10 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       room: string;
       message: string;
       type: 'text' | 'image' | 'video' | 'audio' | 'file';
+      tempId?: string;
     },
   ) {
-    const { room, message, type } = body;
+    const { room, message, type, tempId } = body;
     const { _id } = client.handshake.query;
     try {
       const { newMessage, newChat } = await this.messagesService.createMessage(
@@ -161,7 +162,8 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       this.updateChat(newChat);
-      this.server.to(room).emit('messageCreated', {
+      client.emit('messageCreated', { content: { ...data, tempId } });
+      client.broadcast.to(room).emit('messageCreated', {
         content: data,
       });
     } catch (err) {
@@ -294,6 +296,11 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const newChatUsers = chat.users.map((user) => user._id.toString());
 
+      await this.redisService.invalidateCacheKey(
+        `messages?chatId=${chat._id}`,
+        async () => chat.lastMessage,
+      );
+
       newChatUsers.forEach((userId) => {
         if (!existingChat) {
           this.redisService.addToCache(
@@ -305,17 +312,43 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
             `chats?userId=${userId}`,
             async () => chat,
           );
+          this.server.to(String(chat._id)).emit('messageCreated', {
+            content: chat.lastMessage,
+          });
         }
-        this.redisService.addToCache(
-          `messages?chatId=${chat._id}`,
-          async () => chat.lastMessage,
-        );
       });
 
       // Broadcast the new chat to all online members of the chat
       if (!!onlineUserIds.length) {
         this.server.to(onlineUserIds).emit('chatCreated', {
           content: { ...chat },
+        });
+      }
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  async updateChat(updatedChat: Chat) {
+    try {
+      const onlineUsers = await this.redisService.getOnlineUsers();
+      const onlineUserSet = new Set(onlineUsers);
+      const userIds = updatedChat.users.map((user) => user._id.toString());
+      const onlineUserIds = userIds.filter((userId) =>
+        onlineUserSet.has(userId),
+      );
+
+      // Update respective chat cache data for each user in the chat
+      userIds.forEach((userId) =>
+        this.redisService.updateInCache(
+          `chats?userId=${userId}`,
+          async () => updatedChat,
+        ),
+      );
+      // Broadcast the updated chat to all online members of the chat
+      if (!!onlineUserIds.length) {
+        this.server.to(onlineUserIds).emit('chatUpdated', {
+          content: updatedChat,
         });
       }
     } catch (err) {
@@ -503,33 +536,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         error: err.message,
       };
       this.handleError(client, error);
-    }
-  }
-
-  async updateChat(updatedChat: Chat) {
-    try {
-      const onlineUsers = await this.redisService.getOnlineUsers();
-      const onlineUserSet = new Set(onlineUsers);
-      const userIds = updatedChat.users.map((user) => user._id.toString());
-      const onlineUserIds = userIds.filter((userId) =>
-        onlineUserSet.has(userId),
-      );
-
-      // Update respective chat cache data for each user in the chat
-      userIds.forEach((userId) =>
-        this.redisService.updateInCache(
-          `chats?userId=${userId}`,
-          async () => updatedChat,
-        ),
-      );
-      // Broadcast the updated chat to all online members of the chat
-      if (!!onlineUserIds.length) {
-        this.server.to(onlineUserIds).emit('chatUpdated', {
-          content: updatedChat,
-        });
-      }
-    } catch (err) {
-      throw err;
     }
   }
 

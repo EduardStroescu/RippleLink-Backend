@@ -38,41 +38,6 @@ export class UsersService {
     }
   }
 
-  async connectUser(userId: Types.ObjectId) {
-    try {
-      const user = await this.userModel.findById(userId).populate('status');
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      let updatedStatus;
-      if (user.status) {
-        updatedStatus = await this.statusModel
-          .findByIdAndUpdate(
-            user.status,
-            { online: true, lastSeen: new Date() },
-            { new: true },
-          )
-          .exec();
-      } else {
-        updatedStatus = new this.statusModel({
-          userId,
-          online: true,
-          lastSeen: new Date(),
-        });
-        await updatedStatus.save();
-      }
-
-      user.status = updatedStatus;
-      await user.save();
-
-      return updatedStatus;
-    } catch (err) {
-      return { error: err.message };
-    }
-  }
-
   async disconnectUser(userId: Types.ObjectId) {
     try {
       const user = await this.userModel.findById(userId).populate('status');
@@ -81,28 +46,12 @@ export class UsersService {
         throw new Error('User not found');
       }
 
-      let updatedStatus;
-      if (user.status) {
-        updatedStatus = await this.statusModel
-          .findByIdAndUpdate(
-            user.status,
-            { online: false, lastSeen: new Date() },
-            { new: true },
-          )
-          .exec();
-      } else {
-        updatedStatus = new this.statusModel({
-          userId,
-          online: false,
-          lastSeen: new Date(),
-        });
-        await updatedStatus.save();
-      }
+      const updatedStatus = await this.statusModel
+        .findByIdAndUpdate(user.status, { lastSeen: new Date() }, { new: true })
+        .exec();
 
-      if (updatedStatus) {
-        user.status = updatedStatus._id;
-        await user.save();
-      }
+      user.status = updatedStatus._id;
+      await user.save();
 
       return updatedStatus;
     } catch (err) {

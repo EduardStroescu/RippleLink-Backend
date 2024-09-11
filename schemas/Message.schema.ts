@@ -36,7 +36,7 @@ export class Message extends Document {
   read: boolean;
 
   @Prop({ type: Date })
-  readAt: Date;
+  readAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

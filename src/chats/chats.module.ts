@@ -6,6 +6,7 @@ import { Chat, ChatSchema } from 'schemas/Chat.schema';
 import { User, UserSchema } from 'schemas/User.schema';
 import { Message, MessageSchema } from 'schemas/Message.schema';
 import { GatewayModule } from 'src/gateway/gateway.module';
+import { MessagesModule } from 'src/messages/messages.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { GatewayModule } from 'src/gateway/gateway.module';
       { name: User.name, schema: UserSchema },
       { name: Message.name, schema: MessageSchema },
     ]),
+    MessagesModule,
     GatewayModule,
   ],
   controllers: [ChatsController],

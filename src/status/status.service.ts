@@ -1,4 +1,6 @@
 import {
+  forwardRef,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -8,21 +10,42 @@ import { Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
 import { Status } from 'schemas/Status.schema';
+import { RedisService } from 'src/redis/redis.service';
 
 @Injectable()
 export class StatusService {
   constructor(
     @InjectModel(Status.name) private statusModel: Model<Status>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @Inject(forwardRef(() => RedisService))
+    private readonly redisService: RedisService,
   ) {}
 
   async getUserStatus(userId: string) {
     try {
       const status = await this.statusModel.findOne({ userId }).exec();
+      const isUserOnline = await this.redisService.isUserOnline(userId);
+      if (isUserOnline) {
+        status.online = true;
+      } else {
+        status.online = false;
+      }
 
       return status.toObject();
     } catch (err) {
       throw new InternalServerErrorException('Unable to get user status');
+    }
+  }
+
+  async createStatus(userId: Types.ObjectId) {
+    try {
+      const updatedStatus = new this.statusModel({
+        userId,
+        lastSeen: new Date(),
+      });
+      await updatedStatus.save();
+    } catch (err) {
+      throw new InternalServerErrorException('Unable to create status');
     }
   }
 
@@ -50,6 +73,27 @@ export class StatusService {
       return newStatus.toObject();
     } catch (err) {
       throw new InternalServerErrorException('Unable to update status');
+    }
+  }
+
+  async disconnectUser(userId: Types.ObjectId) {
+    try {
+      const user = await this.userModel.findById(userId).populate('status');
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const updatedStatus = await this.statusModel
+        .findByIdAndUpdate(user.status, { lastSeen: new Date() }, { new: true })
+        .exec();
+
+      user.status = updatedStatus._id;
+      await user.save();
+
+      return updatedStatus;
+    } catch (err) {
+      return { error: err.message };
     }
   }
 }

@@ -3,6 +3,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -10,6 +11,7 @@ import { Chat } from 'schemas/Chat.schema';
 import { CreateChatDto } from './dto/CreateChat.dto';
 import { User } from 'schemas/User.schema';
 import { Message } from 'schemas/Message.schema';
+import { MessagesService } from 'src/messages/messages.service';
 
 @Injectable()
 export class ChatsService {
@@ -17,6 +19,7 @@ export class ChatsService {
     @InjectModel(Chat.name) private chatModel: Model<Chat>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Message.name) private messageModel: Model<Message>,
+    private readonly messageService: MessagesService,
   ) {}
 
   async createChat(
@@ -56,13 +59,12 @@ export class ChatsService {
       }
 
       // Create a new message (if provided) and associate it with the chat
-      const newMessage = new this.messageModel({
-        chatId: chat._id,
-        senderId: userId,
-        content: createChatDto.lastMessage,
-        type: createChatDto.messageType,
-      });
-      await newMessage.save();
+      const { newMessage } = await this.messageService.createMessage(
+        chat._id,
+        userId,
+        createChatDto.lastMessage,
+        createChatDto.messageType,
+      );
 
       // Update the chat with the last message ID
       chat.lastMessage = newMessage._id;
@@ -121,6 +123,29 @@ export class ChatsService {
     return await this.messageModel
       .find({ chatId: chatId, type: { $ne: 'text' } })
       .sort({ createdAt: -1 });
+  }
+
+  async updateChat(chatId: string, updateChatDto: CreateChatDto) {
+    try {
+      let updatedChat = await this.chatModel
+        .findByIdAndUpdate(chatId, updateChatDto, { new: true })
+        .exec();
+      if (!updatedChat) {
+        throw new BadRequestException('Chat not found');
+      }
+
+      updatedChat = await updatedChat.populate({
+        path: 'users',
+        select: 'displayName avatarUrl',
+      });
+      updatedChat = await updatedChat.populate({
+        path: 'lastMessage',
+        populate: { path: 'senderId', select: 'displayName' },
+      });
+      return updatedChat.toObject();
+    } catch (error) {
+      throw new InternalServerErrorException('Unable to update chat');
+    }
   }
 
   async deleteChat(user: User, chatId: Types.ObjectId): Promise<Chat> {

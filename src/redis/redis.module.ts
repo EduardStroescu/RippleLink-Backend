@@ -2,7 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { RedisService } from './redis.service';
 import { RedisModule as IoredisModule } from '@nestjs-modules/ioredis';
 import { RedisController } from './redis.controller';
-import { UsersModule } from 'src/users/users.module';
+import { StatusModule } from 'src/status/status.module';
 
 @Global()
 @Module({
@@ -11,7 +11,7 @@ import { UsersModule } from 'src/users/users.module';
       type: 'single',
       url: process.env.REDIS_URL,
     }),
-    UsersModule,
+    StatusModule,
   ],
   controllers: [RedisController],
   providers: [RedisService],

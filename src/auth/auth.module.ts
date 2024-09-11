@@ -5,18 +5,16 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'schemas/User.schema';
 import { JwtStrategy } from './strategies';
 import { JwtModule } from '@nestjs/jwt';
-import { Status, StatusSchema } from 'schemas/Status.schema';
 import { UsersModule } from 'src/users/users.module';
 import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
+import { StatusModule } from 'src/status/status.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: User.name, schema: UserSchema },
-      { name: Status.name, schema: StatusSchema },
-    ]),
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     JwtModule.register({}),
     UsersModule,
+    StatusModule,
     CloudinaryModule,
   ],
   controllers: [AuthController],

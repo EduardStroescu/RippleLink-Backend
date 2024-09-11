@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -93,6 +94,19 @@ export class ChatsController {
   async getSharedFiles(@Param('chatId') chatId: string) {
     const response = await this.chatsService.getSharedFiles(chatId);
     return response;
+  }
+
+  @Patch(':chatId')
+  async updateChat(
+    @Param('chatId') chatId: string,
+    @Body() updateChatDto: CreateChatDto,
+  ) {
+    const updatedChat = await this.chatsService.updateChat(
+      chatId,
+      updateChatDto,
+    );
+    await this.gatewayService.updateChat(updatedChat);
+    return updatedChat;
   }
 
   @ApiBearerAuth()

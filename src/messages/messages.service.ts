@@ -280,9 +280,8 @@ export class MessagesService {
         .find(query)
         .populate({
           path: 'senderId',
-          select: '_id, displayName',
+          select: 'displayName',
         })
-        .populate({ path: 'chatId' })
         .sort({ createdAt: -1 }) // Sort from newest to oldest
         .limit(limit)
         .exec();

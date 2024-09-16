@@ -31,9 +31,6 @@ export class Settings extends Document {
 
   @Prop({ required: false })
   tintColor?: string;
-
-  @Prop({ required: false })
-  receiveNotifications?: boolean;
 }
 
 export const SettingsSchema = SchemaFactory.createForClass(Settings);

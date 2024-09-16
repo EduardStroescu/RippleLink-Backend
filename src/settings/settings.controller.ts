@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiCreatedResponse,
+  ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -16,7 +16,10 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @ApiBearerAuth()
-  @ApiCreatedResponse()
+  @ApiOkResponse({
+    description: 'Settings updated',
+    type: UpdateSettingsDto,
+  })
   @ApiUnauthorizedResponse({
     description: 'Invalid or expired token',
     status: 401,

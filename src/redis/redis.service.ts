@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { Types } from 'mongoose';
-import { ResetRedisCacheDto } from './dto/resetRedisCache.dto';
+import { ResetRedisCacheDto } from './dto/ResetRedisCache.dto';
 import { ConfigService } from '@nestjs/config';
 import { StatusService } from 'src/status/status.service';
 
@@ -27,6 +27,10 @@ export class RedisService {
     private readonly configService: ConfigService,
     private readonly statusService: StatusService,
   ) {}
+
+  getClient(): Redis {
+    return this.redis;
+  }
 
   async getOrSetCache<T>(key: string, cb: () => Promise<T>): Promise<T> {
     try {
@@ -93,6 +97,7 @@ export class RedisService {
   async updateInCache<T extends Identifiable>(
     key: string,
     cb: () => Promise<T>,
+    { addNew = true }: { addNew?: boolean } = {},
   ) {
     try {
       // Retrieve existing cache data
@@ -113,7 +118,7 @@ export class RedisService {
         );
         if (index !== -1) {
           parsedData.splice(index, 1, updatedData);
-        } else {
+        } else if (index === -1 && addNew) {
           parsedData.push(updatedData);
         }
 

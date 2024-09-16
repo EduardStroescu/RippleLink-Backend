@@ -14,6 +14,7 @@ import { Chat } from 'schemas/Chat.schema';
 import { Message } from 'schemas/Message.schema';
 import { Server, Socket } from 'socket.io';
 import { CallsService } from 'src/calls/calls.service';
+import { CallDto } from 'src/lib/dtos/call.dto';
 import { MessagesService } from 'src/messages/messages.service';
 import { RedisService } from 'src/redis/redis.service';
 
@@ -35,7 +36,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { _id } = socket.handshake.query;
 
     if (!token) {
-      this.handleError(socket, { message: 'Authentication token is missing' });
+      this.handleError(socket, 'Authentication token is missing');
       socket.disconnect();
       return;
     }
@@ -52,11 +53,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
     } catch (err) {
-      const error = {
-        message: 'Failed to connect user',
-        details: err.message,
-      };
-      this.handleError(socket, error);
+      this.handleError(socket, 'Failed to connect');
       socket.disconnect();
     }
   }
@@ -64,21 +61,13 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleDisconnect(@ConnectedSocket() socket: Socket) {
     const { _id } = socket.handshake.query;
 
-    try {
-      await this.redisService.disconnectUser(_id as string);
-      this.server.emit('broadcastUserStatus', {
-        content: {
-          _id: _id,
-          isOnline: false,
-        },
-      });
-    } catch (err) {
-      const error = {
-        message: 'Failed to disconnect user',
-        details: err.message,
-      };
-      this.handleError(socket, error);
-    }
+    await this.redisService.disconnectUser(_id as string);
+    this.server.emit('broadcastUserStatus', {
+      content: {
+        _id: _id,
+        isOnline: false,
+      },
+    });
   }
 
   @SubscribeMessage('joinRoom')
@@ -87,15 +76,8 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { room: string },
   ) {
     const { room } = body;
-    try {
-      client.join(room);
-    } catch (err) {
-      const error = {
-        message: 'Failed to join room',
-        details: err.message,
-      };
-      this.handleError(client, error);
-    }
+
+    client.join(room);
   }
 
   @SubscribeMessage('leaveRoom')
@@ -105,15 +87,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { room } = body;
 
-    try {
-      client.leave(room);
-    } catch (err) {
-      const error = {
-        message: 'Failed to leave room',
-        details: err.message,
-      };
-      this.handleError(client, error);
-    }
+    client.leave(room);
   }
 
   @SubscribeMessage('typing')
@@ -123,17 +97,10 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { room, isTyping } = body;
     const { _id, displayName } = client.handshake.query;
-    try {
-      client.broadcast.to(room).emit('interlocutorIsTyping', {
-        content: { user: { _id, displayName }, isTyping },
-      });
-    } catch (err) {
-      const error = {
-        message: 'Failed to broadcast typing status',
-        details: err.message,
-      };
-      this.handleError(client, error);
-    }
+
+    client.broadcast.to(room).emit('interlocutorIsTyping', {
+      content: { user: { _id, displayName }, isTyping },
+    });
   }
 
   @SubscribeMessage('createMessage')
@@ -161,17 +128,13 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         async () => newMessage,
       );
 
-      this.updateChat(newChat);
+      this.updateChat(newChat, 'create');
       client.emit('messageCreated', { content: { ...data, tempId } });
       client.broadcast.to(room).emit('messageCreated', {
         content: data,
       });
     } catch (err) {
-      const error = {
-        message: 'Failed to create message',
-        details: err.message,
-      };
-      this.handleError(client, error);
+      this.handleError(client, err.message);
     }
   }
 
@@ -197,18 +160,14 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         async () => updatedMessage,
       );
       if (updatedChat) {
-        this.updateChat(updatedChat);
+        this.updateChat(updatedChat, 'update');
       }
 
       this.server.to(room).emit(`messageUpdated`, {
         content: response,
       });
     } catch (err) {
-      const error = {
-        message: 'Failed to update message',
-        details: err.message,
-      };
-      this.handleError(client, error);
+      this.handleError(client, err.message);
     }
   }
 
@@ -232,18 +191,14 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         async () => deletedMessage,
       );
       if (updatedChat) {
-        this.updateChat(updatedChat);
+        this.updateChat(updatedChat, 'delete');
       }
 
       this.server.to(room).emit('messageDeleted', {
         content: response,
       });
     } catch (err) {
-      const error = {
-        message: 'Failed to delete message',
-        details: err.message,
-      };
-      this.handleError(client, error);
+      this.handleError(client, err.message);
     }
   }
 
@@ -266,93 +221,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         'read',
         true,
       );
-      this.updateChat(updatedChat);
+      this.updateChat(updatedChat, 'update');
       this.server.to(room).emit('messagesRead', {
         content: updatedChat,
       });
     } catch (err) {
-      const error = {
-        message: 'Failed to send message status',
-        details: err.message,
-      };
-      this.handleError(client, error);
-    }
-  }
-
-  async createChat(
-    chatCreatorId: Types.ObjectId,
-    chat: Chat,
-    existingChat: boolean,
-  ) {
-    try {
-      const onlineUsers = (await this.redisService.getOnlineUsers())?.filter(
-        (id) => id !== chatCreatorId.toString(),
-      );
-
-      const onlineUserSet = new Set(onlineUsers);
-      const onlineUserIds = chat.users
-        .map((user) => user._id.toString())
-        .filter((userId) => onlineUserSet.has(userId));
-
-      const newChatUsers = chat.users.map((user) => user._id.toString());
-
-      await this.redisService.invalidateCacheKey(
-        `messages?chatId=${chat._id}`,
-        async () => chat.lastMessage,
-      );
-
-      newChatUsers.forEach((userId) => {
-        if (!existingChat) {
-          this.redisService.addToCache(
-            `chats?userId=${userId}`,
-            async () => chat,
-          );
-        } else {
-          this.redisService.updateInCache(
-            `chats?userId=${userId}`,
-            async () => chat,
-          );
-          this.server.to(String(chat._id)).emit('messageCreated', {
-            content: chat.lastMessage,
-          });
-        }
-      });
-
-      // Broadcast the new chat to all online members of the chat
-      if (!!onlineUserIds.length) {
-        this.server.to(onlineUserIds).emit('chatCreated', {
-          content: { ...chat },
-        });
-      }
-    } catch (err) {
-      throw err;
-    }
-  }
-
-  async updateChat(updatedChat: Chat) {
-    try {
-      const onlineUsers = await this.redisService.getOnlineUsers();
-      const onlineUserSet = new Set(onlineUsers);
-      const userIds = updatedChat.users.map((user) => user._id.toString());
-      const onlineUserIds = userIds.filter((userId) =>
-        onlineUserSet.has(userId),
-      );
-
-      // Update respective chat cache data for each user in the chat
-      userIds.forEach((userId) =>
-        this.redisService.updateInCache(
-          `chats?userId=${userId}`,
-          async () => updatedChat,
-        ),
-      );
-      // Broadcast the updated chat to all online members of the chat
-      if (!!onlineUserIds.length) {
-        this.server.to(onlineUserIds).emit('chatUpdated', {
-          content: updatedChat,
-        });
-      }
-    } catch (err) {
-      throw err;
+      this.handleError(client, 'Failed to mark messages as read');
     }
   }
 
@@ -404,15 +278,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         }, maxWaitTime);
       }
     } catch (err) {
-      const error = {
-        message: 'Failed to join call',
-      };
-      this.handleError(client, error);
+      this.handleError(client, 'Failed to join call');
     }
   }
 
   @SubscribeMessage('initiateCall')
-  async handleCallUser(
+  async initiateCall(
     @MessageBody()
     body: {
       chatId: string;
@@ -437,15 +308,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         .to(participantId)
         .emit('callCreated', { offer, participantId: _id });
     } catch (err) {
-      const error = {
-        message: 'Failed to create call',
-      };
-      this.handleError(client, error);
+      this.handleError(client, 'Failed to create call');
     }
   }
 
   @SubscribeMessage('sendCallAnswer')
-  async handleMakeAnswer(
+  async answerCall(
     @MessageBody()
     body: {
       chatId: string;
@@ -471,16 +339,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         .to(participantId)
         .emit('callAnswered', { answer, participantId: _id });
     } catch (err) {
-      const error = {
-        message: 'Failed to send call answer',
-        error: err.message,
-      };
-      this.handleError(client, error);
+      this.handleError(client, 'Failed to answer call');
     }
   }
 
   @SubscribeMessage('saveIceCandidates')
-  async handleSaveIceCandidates(
+  async saveIceCandidates(
     @MessageBody()
     body: {
       chatId: string;
@@ -504,16 +368,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!updatedCall) return;
       await this.updateCalls(updatedCall);
     } catch (err) {
-      const error = {
-        message: 'Failed to update ice candidates',
-        error: err.message,
-      };
-      this.handleError(client, error);
+      this.handleError(client, 'Failed to update ice candidates');
     }
   }
 
   @SubscribeMessage('endCall')
-  async handleEndCall(
+  async endCall(
     @MessageBody() body: { callId: string; answer: any },
     @ConnectedSocket() client: Socket,
   ) {
@@ -531,61 +391,112 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.deleteCalls({ ...updatedCall, callEnded });
       }
     } catch (err) {
-      const error = {
-        message: 'Failed to end call',
-        error: err.message,
-      };
-      this.handleError(client, error);
+      this.handleError(client, err.message);
     }
   }
 
-  private async updateCalls(updatedCall) {
-    try {
-      const onlineUsers = await this.redisService.getOnlineUsers();
-      const onlineUserSet = new Set(onlineUsers);
-      const userIds = updatedCall.chatId.users.map((user) =>
-        user._id.toString(),
-      );
-      const onlineUserIds = userIds.filter((userId) =>
-        onlineUserSet.has(userId),
-      );
+  async createChat(
+    chatCreatorId: Types.ObjectId,
+    chat: Chat,
+    existingChat: boolean,
+  ) {
+    const onlineUsers = (await this.redisService.getOnlineUsers())?.filter(
+      (id) => id !== chatCreatorId.toString(),
+    );
 
-      // Broadcast the updated chat to all online members of the chat
-      if (!!onlineUserIds.length) {
-        this.server.to(onlineUserIds).emit('callsUpdated', {
-          content: updatedCall,
+    const onlineUserSet = new Set(onlineUsers);
+    const onlineUserIds = chat.users
+      .map((user) => user._id.toString())
+      .filter((userId) => onlineUserSet.has(userId));
+
+    const newChatUsers = chat.users.map((user) => user._id.toString());
+
+    await this.redisService.invalidateCacheKey(
+      `messages?chatId=${chat._id}`,
+      async () => chat.lastMessage,
+    );
+
+    newChatUsers.forEach((userId) => {
+      if (!existingChat) {
+        this.redisService.addToCache(
+          `chats?userId=${userId}`,
+          async () => chat,
+        );
+      } else {
+        this.redisService.updateInCache(
+          `chats?userId=${userId}`,
+          async () => chat,
+        );
+        this.server.to(String(chat._id)).emit('messageCreated', {
+          content: chat.lastMessage,
         });
       }
-    } catch (err) {
-      throw err;
+    });
+
+    // Broadcast the new chat to all online members of the chat
+    if (!!onlineUserIds.length) {
+      this.server.to(onlineUserIds).emit('chatCreated', {
+        content: { ...chat },
+      });
     }
   }
 
-  private async deleteCalls(deletedCall) {
-    try {
-      const onlineUsers = await this.redisService.getOnlineUsers();
-      const onlineUserSet = new Set(onlineUsers);
-      const userIds = deletedCall.chatId.users.map((user) =>
-        user._id.toString(),
-      );
-      const onlineUserIds = userIds.filter((userId) =>
-        onlineUserSet.has(userId),
-      );
-      // Broadcast the updated chat to all online members of the chat
-      if (!!onlineUserIds.length) {
-        this.server.to(onlineUserIds).emit('callsUpdated', {
-          content: deletedCall,
-        });
-      }
-    } catch (err) {
-      throw err;
+  async updateChat(
+    updatedChat: Chat,
+    // Separation made for the eventType to be able distinguish events on the client
+    eventType: 'create' | 'update' | 'delete',
+  ) {
+    const onlineUsers = await this.redisService.getOnlineUsers();
+    const onlineUserSet = new Set(onlineUsers);
+    const userIds = updatedChat.users.map((user) => user._id.toString());
+    const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
+
+    // Update respective chat cache data for each user in the chat
+    userIds.forEach((userId) =>
+      this.redisService.updateInCache(
+        `chats?userId=${userId}`,
+        async () => updatedChat,
+        { addNew: eventType === 'create' },
+      ),
+    );
+    // Broadcast the updated chat to all online members of the chat
+    if (!!onlineUserIds.length) {
+      this.server.to(onlineUserIds).emit('chatUpdated', {
+        content: { ...updatedChat, eventType },
+      });
     }
   }
 
-  private async handleError(client: Socket, error: any) {
+  private async updateCalls(updatedCall: CallDto) {
+    const onlineUsers = await this.redisService.getOnlineUsers();
+    const onlineUserSet = new Set(onlineUsers);
+    const userIds = updatedCall.chatId.users.map((user) => user._id.toString());
+    const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
+
+    // Broadcast the updated chat to all online members of the chat
+    if (!!onlineUserIds.length) {
+      this.server.to(onlineUserIds).emit('callsUpdated', {
+        content: updatedCall,
+      });
+    }
+  }
+
+  private async deleteCalls(deletedCall: CallDto & { callEnded?: boolean }) {
+    const onlineUsers = await this.redisService.getOnlineUsers();
+    const onlineUserSet = new Set(onlineUsers);
+    const userIds = deletedCall.chatId.users.map((user) => user._id.toString());
+    const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
+    // Broadcast the updated chat to all online members of the chat
+    if (!!onlineUserIds.length) {
+      this.server.to(onlineUserIds).emit('callsUpdated', {
+        content: deletedCall,
+      });
+    }
+  }
+
+  private async handleError(client: Socket, error: string) {
     client.emit('error', {
-      message: error.message,
-      details: error.message,
+      message: error,
     });
   }
 }

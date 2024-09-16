@@ -1,9 +1,9 @@
 import {
   BadRequestException,
   HttpException,
-  HttpStatus,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -12,6 +12,7 @@ import { CreateChatDto } from './dto/CreateChat.dto';
 import { User } from 'schemas/User.schema';
 import { Message } from 'schemas/Message.schema';
 import { MessagesService } from 'src/messages/messages.service';
+import { UpdateChatDto } from './dto/UpdateChat.dto';
 
 @Injectable()
 export class ChatsService {
@@ -34,10 +35,7 @@ export class ChatsService {
 
       // Check if all user IDs provided exist
       if (usersInChat.length !== createChatDto.userIds.length + 1) {
-        throw new HttpException(
-          'One or more users not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new NotFoundException('One or more users not found');
       }
 
       let chat = await this.chatModel.findOne({
@@ -89,10 +87,8 @@ export class ChatsService {
 
       return { newChat: finalChat.toObject(), wasExistingChat };
     } catch (err) {
-      throw new HttpException(
-        'Unable to create chat',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException('Unable to create chat');
     }
   }
 
@@ -113,19 +109,22 @@ export class ChatsService {
 
       return chats;
     } catch (error) {
-      throw new Error(
-        'An error occurred while retrieving chats: ' + error.message,
-      );
+      throw new InternalServerErrorException("Couldn't retrieve chats");
     }
   }
 
   async getSharedFiles(chatId: string) {
-    return await this.messageModel
-      .find({ chatId: chatId, type: { $ne: 'text' } })
-      .sort({ createdAt: -1 });
+    try {
+      return await this.messageModel
+        .find({ chatId: chatId, type: { $ne: 'text' } })
+        .sort({ createdAt: -1 });
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException('Unable to retrieve shared files');
+    }
   }
 
-  async updateChat(chatId: string, updateChatDto: CreateChatDto) {
+  async updateChat(chatId: string, updateChatDto: UpdateChatDto) {
     try {
       let updatedChat = await this.chatModel
         .findByIdAndUpdate(chatId, updateChatDto, { new: true })
@@ -143,7 +142,8 @@ export class ChatsService {
         populate: { path: 'senderId', select: 'displayName' },
       });
       return updatedChat.toObject();
-    } catch (error) {
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException('Unable to update chat');
     }
   }
@@ -191,7 +191,8 @@ export class ChatsService {
       }
       return updatedChat;
     } catch (err) {
-      throw new BadRequestException('Unable to delete chat');
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException('Unable to delete chat');
     }
   }
 }

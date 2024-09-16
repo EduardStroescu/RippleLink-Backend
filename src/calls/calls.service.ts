@@ -1,19 +1,27 @@
-import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  Injectable,
+  InternalServerErrorException,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Call } from 'schemas/Call.schema';
 import { User } from 'schemas/User.schema';
+import { CallDto } from 'src/lib/dtos/call.dto';
 
-@Injectable({})
-export class CallsService implements OnModuleInit {
+@Injectable()
+export class CallsService implements OnModuleDestroy {
   private iceCandidatesQueue: any[] = [];
+  private intervalId: NodeJS.Timeout;
   constructor(
     @InjectModel(Call.name) private callModel: Model<Call>,
     @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
-  async onModuleInit() {
-    setInterval(() => this.flushIceCandidatesQueue(), 1000);
+  async onModuleDestroy() {
+    this.stopInterval();
   }
 
   async getAllCalls(user: User): Promise<Call[]> {
@@ -37,13 +45,14 @@ export class CallsService implements OnModuleInit {
 
       return calls;
     } catch (error) {
-      throw new Error(
-        'An error occurred while retrieving chats: ' + error.message,
-      );
+      throw new InternalServerErrorException("Couldn't retrieve calls");
     }
   }
 
-  async joinCall(_id: Types.ObjectId, chatId: Types.ObjectId) {
+  async joinCall(
+    _id: Types.ObjectId,
+    chatId: Types.ObjectId,
+  ): Promise<CallDto> {
     try {
       // Verify that the user is a member of the chat
       const user = await this.userModel.findById(_id).exec();
@@ -93,13 +102,16 @@ export class CallsService implements OnModuleInit {
 
       return updatedCall.toObject();
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new BadRequestException('Unable to join call');
     }
   }
 
-  async getCall(chatId: Types.ObjectId) {
+  async getCall(chatId: Types.ObjectId): Promise<CallDto> {
     try {
-      return await this.callModel.findOne({ chatId }).exec();
+      const call = await this.callModel.findOne({ chatId }).exec();
+
+      return call.toObject();
     } catch (err) {
       throw new BadRequestException('Unable to get call');
     }
@@ -129,7 +141,7 @@ export class CallsService implements OnModuleInit {
 
       return iceSent;
     } catch (err) {
-      throw new BadRequestException(
+      throw new InternalServerErrorException(
         'Unable to check if everyone sent ICE candidates',
       );
     }
@@ -147,7 +159,7 @@ export class CallsService implements OnModuleInit {
     offer?: string;
     answer?: string;
     to: Types.ObjectId;
-  }) {
+  }): Promise<CallDto> {
     try {
       // Check if the user is still part of the chat
       const user = await this.userModel.findById(_id).exec();
@@ -225,7 +237,71 @@ export class CallsService implements OnModuleInit {
 
       return updatedCall.toObject();
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new BadRequestException('Unable to update call');
+    }
+  }
+
+  async endCall(
+    _id: Types.ObjectId,
+    callId: Types.ObjectId,
+  ): Promise<{
+    updatedCall: CallDto;
+    callEnded?: boolean;
+  }> {
+    try {
+      const call = await this.callModel
+        .findById(callId)
+        .populate({
+          path: 'chatId',
+          populate: { path: 'users', select: 'displayName avatarUrl' },
+        })
+        .populate({
+          path: 'participants.userId',
+          select: 'displayName avatarUrl',
+        })
+        .exec();
+
+      if (!call) {
+        throw new BadRequestException('Ongoing call not found');
+      }
+
+      // Ensure the user is part of the call before proceeding
+      const isUserInCall = call.participants.some((participant) =>
+        participant?.userId?._id.equals(_id),
+      );
+
+      if (!isUserInCall) {
+        throw new BadRequestException('You are not part of this call');
+      }
+
+      // Filter out the participant to be removed
+      const updatedParticipants = call.participants.filter((participant) =>
+        participant?.userId?._id ? !participant.userId._id.equals(_id) : false,
+      );
+
+      if (updatedParticipants.length === 0) {
+        // No participants left, delete the call
+        await this.callModel.deleteOne({ _id: call._id }).exec();
+        return { updatedCall: call.toObject(), callEnded: true };
+      } else {
+        // Update the call with the remaining participants
+        call.participants = updatedParticipants;
+
+        await call.save();
+        await call.populate({
+          path: 'chatId',
+          populate: { path: 'users', select: 'displayName avatarUrl' },
+        });
+        await call.populate({
+          path: 'participants.userId',
+          select: 'displayName avatarUrl',
+        });
+
+        return { updatedCall: call.toObject() };
+      }
+    } catch (err) {
+      throw new BadRequestException('Unable to end call');
     }
   }
 
@@ -241,7 +317,7 @@ export class CallsService implements OnModuleInit {
     iceCandidates: string;
     candidatesType: 'offer' | 'answer';
     to: Types.ObjectId;
-  }) {
+  }): Promise<CallDto> {
     const updateOperation =
       candidatesType === 'offer'
         ? {
@@ -275,6 +351,9 @@ export class CallsService implements OnModuleInit {
     // Add the operation to the queue
     this.iceCandidatesQueue.push(updateOperation);
 
+    // Start the interval if it's not running
+    this.startInterval();
+
     // Add a short delay to ensure the database is updated
     await new Promise((resolve) => setTimeout(resolve, 2000));
     // Immediately flush the queue to apply the changes
@@ -296,7 +375,7 @@ export class CallsService implements OnModuleInit {
     return updatedCall.toObject();
   }
 
-  async flushIceCandidatesQueue() {
+  private async flushIceCandidatesQueue() {
     if (this.iceCandidatesQueue.length > 0) {
       try {
         const validOperations = [];
@@ -323,66 +402,23 @@ export class CallsService implements OnModuleInit {
         }
 
         this.iceCandidatesQueue = [];
+        this.stopInterval();
       } catch (err) {
         throw new Error('Error during bulk write');
       }
     }
   }
 
-  async endCall(_id: Types.ObjectId, callId: Types.ObjectId): Promise<any> {
-    try {
-      const call = await this.callModel
-        .findById(callId)
-        .populate({
-          path: 'chatId',
-          populate: { path: 'users', select: 'displayName avatarUrl' },
-        })
-        .populate({
-          path: 'participants.userId',
-          select: 'displayName avatarUrl',
-        })
-        .exec();
+  private startInterval() {
+    if (this.intervalId === null) {
+      this.intervalId = setInterval(() => this.flushIceCandidatesQueue(), 1000);
+    }
+  }
 
-      if (!call) {
-        throw new BadRequestException('Chat or ongoing call not found');
-      }
-
-      // Ensure the user is part of the call before proceeding
-      const isUserInCall = call.participants.some((participant) =>
-        participant?.userId?._id.equals(_id),
-      );
-
-      if (!isUserInCall) {
-        throw new BadRequestException('User is not part of this call');
-      }
-
-      // Filter out the participant to be removed
-      const updatedParticipants = call.participants.filter((participant) =>
-        participant?.userId?._id ? !participant.userId._id.equals(_id) : false,
-      );
-
-      if (updatedParticipants.length === 0) {
-        // No participants left, delete the call
-        await this.callModel.deleteOne({ _id: call._id }).exec();
-        return { updatedCall: call.toObject(), callEnded: true };
-      } else {
-        // Update the call with remaining participants
-        call.participants = updatedParticipants;
-
-        await call.save();
-        await call.populate({
-          path: 'chatId',
-          populate: { path: 'users', select: 'displayName avatarUrl' },
-        });
-        await call.populate({
-          path: 'participants.userId',
-          select: 'displayName avatarUrl',
-        });
-
-        return { updatedCall: call.toObject() };
-      }
-    } catch (err) {
-      throw new BadRequestException('Unable to end call');
+  private stopInterval() {
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
     }
   }
 }

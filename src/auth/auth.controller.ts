@@ -21,26 +21,28 @@ import {
 import { JwtGuard } from './guards';
 import { GetUser } from './decorator/GetUser.decorator';
 import { Types } from 'mongoose';
+import { PrivateUserDto } from 'src/lib/dtos/user.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  @Post('register')
   @ApiCreatedResponse({
     status: 201,
     description: 'User Created',
+    type: PrivateUserDto,
   })
   @ApiConflictResponse({ description: 'User already Exists', status: 401 })
+  @Post('register')
   async register(@Body() createUserDto: CreateUserDto) {
     return this.authService.register(createUserDto);
   }
 
-  @Post('login')
   @ApiOkResponse({
     status: 200,
-    description: 'OK',
+    description: 'Logged in successfully',
+    type: PrivateUserDto,
   })
   @ApiNotFoundResponse({
     description: 'User not found',
@@ -51,13 +53,15 @@ export class AuthController {
     status: 401,
   })
   @HttpCode(HttpStatus.OK)
+  @Post('login')
   async login(@Body() loginUserDto: LoginUserDto) {
     return this.authService.login(loginUserDto);
   }
 
   @ApiOkResponse({
     status: 200,
-    description: 'OK',
+    description: 'Token refreshed successfully',
+    type: PrivateUserDto,
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid refresh token, log in again',
@@ -69,11 +73,19 @@ export class AuthController {
     return this.authService.refreshToken(body.refresh_token);
   }
 
-  @UseGuards(JwtGuard)
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    description: 'OK',
+    description: 'Logged out successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'string',
+          example: 'Logged out successfully',
+        },
+      },
+    },
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',

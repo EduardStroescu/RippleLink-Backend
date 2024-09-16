@@ -1,13 +1,22 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class CreateSettingsDto {
+export class SettingsDto {
+  @ApiProperty({
+    description: 'Settings ID',
+    type: String,
+  })
+  _id: string;
+
+  @ApiProperty({
+    description: 'User ID',
+    type: String,
+  })
+  userId: string;
+
   @ApiPropertyOptional({
     description: 'Chat background image as base64 encoded string',
     type: String,
   })
-  @IsOptional()
-  @IsString()
   backgroundImage?: string;
 
   @ApiPropertyOptional({
@@ -15,8 +24,6 @@ export class CreateSettingsDto {
     type: String,
     example: 'rgba(0,255,227,1)',
   })
-  @IsOptional()
-  @IsString()
   glowColor?: string;
 
   @ApiPropertyOptional({
@@ -24,7 +31,5 @@ export class CreateSettingsDto {
     type: String,
     example: 'rgba(0,255,227,1)',
   })
-  @IsOptional()
-  @IsString()
   tintColor?: string;
 }

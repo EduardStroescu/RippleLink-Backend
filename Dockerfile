@@ -24,6 +24,7 @@ WORKDIR /app
 
 # Copy the built files from the previous stage
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/client ./client
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package*.json ./
 

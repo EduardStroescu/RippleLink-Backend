@@ -1,8 +1,13 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { RedisService } from './redis.service';
-import { ResetRedisCacheDto } from './dto/resetRedisCache.dto';
-import { ApiInternalServerErrorResponse, ApiOkResponse } from '@nestjs/swagger';
+import { ResetRedisCacheDto } from './dto/ResetRedisCache.dto';
+import {
+  ApiInternalServerErrorResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
+@ApiTags('Redis')
 @Controller('redis')
 export class RedisController {
   constructor(private readonly redisService: RedisService) {}

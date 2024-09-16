@@ -11,10 +11,17 @@ import { HealthModule } from './health/health.module';
 import { RedisModule } from './redis/redis.module';
 import { CallsModule } from './calls/calls.module';
 import { StatusModule } from './status/status.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'client'),
+      renderPath: '/',
+    }),
     MongooseModule.forRoot(process.env.MONGODB_URI),
     RedisModule,
     GatewayModule,
@@ -27,5 +34,6 @@ import { StatusModule } from './status/status.module';
     StatusModule,
     HealthModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

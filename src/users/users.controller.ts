@@ -3,28 +3,29 @@ import {
   Controller,
   Delete,
   Get,
-  HttpException,
+  HttpCode,
+  NotFoundException,
   Param,
   Patch,
   UseGuards,
-  UsePipes,
-  ValidationPipe,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import UpdateUserDto from './dto/UpdateUser.dto';
 import { JwtGuard } from 'src/auth/guards';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { CreateUserDto } from 'src/auth/dto';
 import { Types } from 'mongoose';
 import { DeleteUserDto } from './dto/DeleteUser.dto';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { ChangePasswordDto } from './dto/ChangePassword.dto';
 import ChangeAvatarDto from './dto/ChangeAvatar.dto';
+import { PrivateUserDto, PublicUserDto } from 'src/lib/dtos/user.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -32,7 +33,10 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200 })
+  @ApiOkResponse({ status: 200, type: PublicUserDto })
+  @ApiNotFoundResponse({
+    description: 'User not found',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
@@ -44,7 +48,10 @@ export class UsersController {
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: CreateUserDto })
+  @ApiOkResponse({ status: 200, type: PublicUserDto })
+  @ApiNotFoundResponse({
+    description: 'User not found',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
@@ -53,19 +60,21 @@ export class UsersController {
   @Get('search/:displayName')
   async getUserByDisplayName(@Param('displayName') displayName: string) {
     const findUser = await this.usersService.getUserByDisplayName(displayName);
-    if (!findUser) throw new HttpException('User not found', 404);
+    if (!findUser) throw new NotFoundException('User not found');
     return findUser;
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: UpdateUserDto })
+  @ApiOkResponse({ status: 200, type: PrivateUserDto })
+  @ApiBadRequestResponse({
+    description: 'Email already exists',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
   @Patch('update-details')
-  @UsePipes(new ValidationPipe())
   async updateUser(
     @GetUser('_id') _id: Types.ObjectId,
     @Body() updateUserDto: UpdateUserDto,
@@ -74,14 +83,25 @@ export class UsersController {
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: UpdateUserDto })
+  @ApiOkResponse({
+    status: 200,
+    description: 'Avatar updated',
+    schema: {
+      type: 'object',
+      properties: {
+        avatarUrl: {
+          type: 'string',
+          description: "URL to the user's avatar image",
+        },
+      },
+    },
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
   @Patch('change-avatar')
-  @UsePipes(new ValidationPipe())
   async changeAvatar(
     @GetUser('_id') _id: Types.ObjectId,
     @Body() updateAvatarDto: ChangeAvatarDto,
@@ -90,14 +110,24 @@ export class UsersController {
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: ChangePasswordDto })
+  @ApiOkResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'string',
+          example: 'Password changed',
+        },
+      },
+    },
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
   @Patch('update-password')
-  @UsePipes(new ValidationPipe())
   async changePassword(
     @GetUser('_id') _id: Types.ObjectId,
     @Body() changePasswordDto: ChangePasswordDto,
@@ -106,13 +136,26 @@ export class UsersController {
   }
 
   @ApiBearerAuth()
-  @ApiOkResponse({ status: 200, type: String, description: 'User deleted' })
+  @ApiOkResponse({
+    status: 204,
+    description: 'User deleted',
+    schema: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'string',
+          example: 'User deleted',
+        },
+      },
+    },
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid access_token token',
   })
   @UseGuards(JwtGuard)
   @Delete()
+  @HttpCode(204)
   async deleteUser(
     @GetUser('_id') _id: Types.ObjectId,
     @Body() deleteUserDto: DeleteUserDto,

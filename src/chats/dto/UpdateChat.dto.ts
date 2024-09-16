@@ -1,13 +1,12 @@
-import { User } from 'schemas/User.schema';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateChatDto {
+  @ApiPropertyOptional({
+    description: 'New Chat Name',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
   name?: string;
-
-  type?: 'group' | 'dm';
-
-  userIds: string[];
-
-  messageType: 'text' | 'image' | 'video' | 'file' | 'audio';
-
-  lastMessage: string;
 }

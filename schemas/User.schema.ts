@@ -49,6 +49,9 @@ export class User extends Document {
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Settings' })
   settings?: Types.ObjectId;
+
+  @Prop({ type: Boolean, default: false })
+  isDeleted?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

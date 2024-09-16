@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -30,45 +31,32 @@ export class UsersService {
       return await this.userModel
         .findById(userId)
         .select(
-          '-password -firstName -lastName -email -refresh_token -createdAt -updatedAt',
+          '-password -firstName -lastName -email -refresh_token -createdAt -updatedAt -isDeleted',
         )
         .exec();
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(err);
-    }
-  }
-
-  async disconnectUser(userId: Types.ObjectId) {
-    try {
-      const user = await this.userModel.findById(userId).populate('status');
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      const updatedStatus = await this.statusModel
-        .findByIdAndUpdate(user.status, { lastSeen: new Date() }, { new: true })
-        .exec();
-
-      user.status = updatedStatus._id;
-      await user.save();
-
-      return updatedStatus;
-    } catch (err) {
-      return { error: err.message };
     }
   }
 
   async updateUser(_id: Types.ObjectId, updateUserDto: UpdateUserDto) {
     try {
+      if (updateUserDto.email) {
+        const user = await this.userModel
+          .findOne({ email: updateUserDto.email })
+          .exec();
+        if (user) throw new BadRequestException('Email already exists');
+      }
       return await this.userModel
         .findByIdAndUpdate(_id, updateUserDto, {
           new: true,
         })
-        .select('-password')
+        .select('-password -isDeleted')
         .exec();
     } catch (err) {
-      throw new BadRequestException(err);
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException("Couldn't update user");
     }
   }
 
@@ -90,6 +78,7 @@ export class UsersService {
 
       return { avatarUrl: newUserAvatar.secure_url };
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(err);
     }
   }
@@ -119,7 +108,8 @@ export class UsersService {
       );
       return { success: 'Password changed' };
     } catch (err) {
-      throw new InternalServerErrorException(err);
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException("Couldn't change password");
     }
   }
 
@@ -127,13 +117,14 @@ export class UsersService {
     try {
       const regex = new RegExp(displayName, 'i');
       return await this.userModel
-        .find({ displayName: { $regex: regex } })
+        .find({ displayName: { $regex: regex }, isDeleted: { $ne: true } })
         .select(
-          '-password -settings -firstName -lastName -email -refresh_token -createdAt -updatedAt -status',
+          '-password -settings -firstName -lastName -email -refresh_token -createdAt -updatedAt -status -isDeleted',
         )
         .exec();
     } catch (err) {
-      throw new InternalServerErrorException(err);
+      if (err instanceof HttpException) throw err;
+      throw new BadRequestException(err);
     }
   }
 
@@ -168,12 +159,26 @@ export class UsersService {
           .split('.')[0];
         await this.cloudinaryService.removeFile(publicId);
       }
-      await deletedUser.deleteOne();
+      await deletedUser.updateOne({
+        displayName: 'User',
+        firstName: null,
+        lastName: null,
+        email: null,
+        password: null,
+        avatarUrl: null,
+        refresh_token: null,
+        status: null,
+        settings: null,
+        isDeleted: true,
+      });
       await this.statusModel.deleteOne({ userId: _id });
       await this.settingsModel.deleteOne({ userId: _id });
       return { success: 'User deleted' };
     } catch (err) {
-      throw new InternalServerErrorException(err);
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException(
+        'An error occurred while deleting the user',
+      );
     }
   }
 }

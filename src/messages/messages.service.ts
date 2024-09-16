@@ -1,8 +1,8 @@
 import {
   BadRequestException,
   HttpException,
-  HttpStatus,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -92,10 +92,8 @@ export class MessagesService {
       });
       return { newMessage: newMessage.toObject(), newChat: newChat.toObject() };
     } catch (err) {
-      throw new HttpException(
-        'Unable to create message',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException('Unable to create message');
     }
   }
 
@@ -148,10 +146,8 @@ export class MessagesService {
         updatedChat: updatedChat ? updatedChat.toObject() : null,
       };
     } catch (err) {
-      throw new HttpException(
-        'Unable to update message',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException('Unable to update message');
     }
   }
 
@@ -161,8 +157,9 @@ export class MessagesService {
     room: Types.ObjectId,
   ): Promise<{ deletedMessage: Message; updatedChat: Chat }> {
     if (!messageId || !userId) {
-      throw new BadRequestException('Invalid input');
+      throw new Error('Invalid input');
     }
+
     try {
       const deletedMessage = await this.messageModel
         .findOne({ _id: messageId, senderId: userId, chatId: room })
@@ -217,10 +214,7 @@ export class MessagesService {
       if (err instanceof HttpException) {
         throw err;
       }
-      throw new HttpException(
-        'Unable to delete message',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new InternalServerErrorException('Unable to delete message');
     }
   }
 
@@ -253,10 +247,7 @@ export class MessagesService {
       if (err instanceof HttpException) {
         throw err;
       }
-      throw new HttpException(
-        'Unable to delete message',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new InternalServerErrorException('Unable to mark messages as read');
     }
   }
 
@@ -300,10 +291,7 @@ export class MessagesService {
       if (err instanceof HttpException) {
         throw err;
       }
-      throw new HttpException(
-        'Unable to retrieve messages',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new InternalServerErrorException('Unable to retrieve messages');
     }
   }
 }

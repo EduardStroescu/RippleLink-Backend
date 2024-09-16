@@ -1,11 +1,12 @@
 import {
   forwardRef,
+  HttpException,
   Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { UpdateStatusDto } from './dto/updateStatus.dto';
+import { UpdateStatusDto } from './dto/UpdateStatus.dto';
 import { Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
@@ -24,6 +25,7 @@ export class StatusService {
   async getUserStatus(userId: string) {
     try {
       const status = await this.statusModel.findOne({ userId }).exec();
+      if (!status) throw new NotFoundException('User status not found');
       const isUserOnline = await this.redisService.isUserOnline(userId);
       if (isUserOnline) {
         status.online = true;
@@ -33,6 +35,7 @@ export class StatusService {
 
       return status.toObject();
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException('Unable to get user status');
     }
   }
@@ -57,7 +60,7 @@ export class StatusService {
         .exec();
       if (!user) throw new NotFoundException('User not found');
 
-      let newStatus;
+      let newStatus: Status;
       if (user.status) {
         newStatus = await this.statusModel.findByIdAndUpdate(
           user.status._id,
@@ -72,6 +75,7 @@ export class StatusService {
       await user.save();
       return newStatus.toObject();
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException('Unable to update status');
     }
   }

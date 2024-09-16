@@ -1,8 +1,8 @@
 import {
   ConflictException,
   HttpException,
-  HttpStatus,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -67,9 +67,8 @@ export class AuthService {
         // Unique constraint failed
         throw new ConflictException('User already exists');
       } else {
-        throw new HttpException(
-          'An error occurred while registering user',
-          HttpStatus.INTERNAL_SERVER_ERROR,
+        throw new InternalServerErrorException(
+          'An error occurred while registering new user',
         );
       }
     }
@@ -113,10 +112,10 @@ export class AuthService {
         ...strippedUser,
         ...tokens,
       };
-    } catch (error) {
-      throw new HttpException(
-        'An error occurred while logging user in',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException(
+        'An error occurred while logging the user in',
       );
     }
   }
@@ -127,7 +126,7 @@ export class AuthService {
         .findOne({
           refresh_token: refreshToken,
         })
-        .select('-password')
+        .select('-password -isDeleted')
         .populate({ path: 'settings' })
         .populate({ path: 'status', select: 'statusMessage' });
 
@@ -152,6 +151,7 @@ export class AuthService {
         refresh_token,
       };
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       throw new UnauthorizedException(
         'Invalid refresh token, please log in again',
       );
@@ -193,8 +193,12 @@ export class AuthService {
     userId: Types.ObjectId,
     refreshToken: string,
   ) {
-    await this.userModel.findByIdAndUpdate(userId, {
-      refresh_token: refreshToken,
-    });
+    try {
+      await this.userModel.findByIdAndUpdate(userId, {
+        refresh_token: refreshToken,
+      });
+    } catch (error) {
+      // Ignore error
+    }
   }
 }

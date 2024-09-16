@@ -11,8 +11,8 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ServerOptions } from 'socket.io';
 import { json } from 'express';
 
-const SOCKET_TRANSFER_LIMIT = 10 * 1e6; // max transfer size 10MB
-const JSON_LIMIT = '10mb';
+const SOCKET_TRANSFER_LIMIT = 10 * 1e6; // Web Socket max transfer size 10MB
+const JSON_LIMIT = '10mb'; // Parser - JSON - max transfer size 10MB
 
 class CustomIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions): any {
@@ -42,7 +42,9 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .addBearerAuth()
     .setTitle('RippleLink Api')
-    .setDescription('RippleLink Api')
+    .setDescription(
+      'REST Api and Socket Gateway for RippleLink - Real-Time Communication',
+    )
     .setVersion('1.0')
     .build();
 

@@ -1,15 +1,19 @@
 import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { StatusService } from './status.service';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
-import { UpdateStatusDto } from './dto/updateStatus.dto';
+import { UpdateStatusDto } from './dto/UpdateStatus.dto';
 import { Types } from 'mongoose';
 import {
   ApiBearerAuth,
+  ApiNotFoundResponse,
   ApiOkResponse,
+  ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { JwtGuard } from 'src/auth/guards';
+import { StatusDto } from 'src/lib/dtos/status.dto';
 
+@ApiTags('Status')
 @Controller('status')
 export class StatusController {
   constructor(private readonly statusService: StatusService) {}
@@ -17,7 +21,11 @@ export class StatusController {
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    type: String,
+    description: 'Status retrieved successfully',
+    type: StatusDto,
+  })
+  @ApiNotFoundResponse({
+    description: 'User not found',
   })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -32,7 +40,8 @@ export class StatusController {
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    type: String,
+    description: 'Status updated successfully',
+    type: StatusDto,
   })
   @ApiUnauthorizedResponse({
     status: 401,

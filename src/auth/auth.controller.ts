@@ -13,6 +13,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
@@ -33,7 +34,11 @@ export class AuthController {
     description: 'User Created',
     type: PrivateUserDto,
   })
+  @ApiInternalServerErrorResponse({
+    description: 'An error occurred while registering new user',
+  })
   @ApiConflictResponse({ description: 'User already Exists', status: 401 })
+  @HttpCode(HttpStatus.CREATED)
   @Post('register')
   async register(@Body() createUserDto: CreateUserDto) {
     return this.authService.register(createUserDto);
@@ -48,8 +53,11 @@ export class AuthController {
     description: 'User not found',
     status: 404,
   })
+  @ApiInternalServerErrorResponse({
+    description: 'An error occurred while logging the user in',
+  })
   @ApiUnauthorizedResponse({
-    description: 'Invalid email or password',
+    description: 'Invalid credentials',
     status: 401,
   })
   @HttpCode(HttpStatus.OK)
@@ -64,7 +72,7 @@ export class AuthController {
     type: PrivateUserDto,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid refresh token, log in again',
+    description: 'Invalid refresh token, please log in again',
     status: 401,
   })
   @HttpCode(HttpStatus.OK)

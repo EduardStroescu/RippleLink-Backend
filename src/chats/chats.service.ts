@@ -3,7 +3,6 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -23,6 +22,27 @@ export class ChatsService {
     private readonly messageService: MessagesService,
   ) {}
 
+  async getAllChats(user: User): Promise<Chat[]> {
+    try {
+      const chats = await this.chatModel
+        .find({ _id: { $in: user.chats } })
+        .populate({
+          path: 'users',
+          select: 'displayName avatarUrl',
+        })
+        .populate({
+          path: 'lastMessage',
+          populate: { path: 'senderId', select: 'displayName' },
+        })
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      return chats;
+    } catch (error) {
+      throw new InternalServerErrorException("Couldn't retrieve chats");
+    }
+  }
+
   async createChat(
     userId: Types.ObjectId,
     createChatDto: CreateChatDto,
@@ -35,7 +55,7 @@ export class ChatsService {
 
       // Check if all user IDs provided exist
       if (usersInChat.length !== createChatDto.userIds.length + 1) {
-        throw new NotFoundException('One or more users not found');
+        throw new BadRequestException('One or more users not found');
       }
 
       let chat = await this.chatModel.findOne({
@@ -92,34 +112,12 @@ export class ChatsService {
     }
   }
 
-  async getAllChats(user: User): Promise<Chat[]> {
-    try {
-      const chats = await this.chatModel
-        .find({ _id: { $in: user.chats } })
-        .populate({
-          path: 'users',
-          select: 'displayName avatarUrl',
-        })
-        .populate({
-          path: 'lastMessage',
-          populate: { path: 'senderId', select: 'displayName' },
-        })
-        .sort({ updatedAt: -1 })
-        .exec();
-
-      return chats;
-    } catch (error) {
-      throw new InternalServerErrorException("Couldn't retrieve chats");
-    }
-  }
-
   async getSharedFiles(chatId: string) {
     try {
       return await this.messageModel
         .find({ chatId: chatId, type: { $ne: 'text' } })
         .sort({ createdAt: -1 });
     } catch (err) {
-      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException('Unable to retrieve shared files');
     }
   }
@@ -150,13 +148,11 @@ export class ChatsService {
 
   async deleteChat(user: User, chatId: Types.ObjectId): Promise<Chat> {
     if (!chatId) {
-      throw new BadRequestException('Invalid input');
+      throw new BadRequestException('Chat not found');
     }
 
     try {
-      const userInChat = user.chats.some((chat) => {
-        return chat._id.equals(chatId);
-      });
+      const userInChat = user.chats.some((chat) => chat._id.equals(chatId));
 
       if (!userInChat) {
         throw new BadRequestException('You are not a member of this chat');

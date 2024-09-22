@@ -22,6 +22,49 @@ export class MessagesService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  async getAllMessages(
+    chatId: Types.ObjectId,
+    cursor?: string,
+    limit: number = 20,
+  ) {
+    if (!chatId) {
+      throw new BadRequestException('Invalid chat id');
+    }
+
+    try {
+      const query: any = { chatId };
+      if (cursor) {
+        query.createdAt = { $lt: new Date(cursor) };
+      }
+
+      const messages = await this.messageModel
+        .find(query)
+        .populate({
+          path: 'senderId',
+          select: 'displayName',
+        })
+        .sort({ createdAt: -1 }) // Sort from newest to oldest
+        .limit(limit)
+        .exec();
+
+      const sortedMessages = messages.reverse();
+
+      // Prepare the next cursor (oldest message's `createdAt`)
+      const nextCursor =
+        messages.length > 0 ? messages[0].createdAt.toISOString() : null;
+
+      return {
+        messages: sortedMessages,
+        nextCursor,
+      };
+    } catch (err) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      throw new InternalServerErrorException('Could not retrieve messages');
+    }
+  }
+
   async createMessage(
     room: Types.ObjectId,
     userId: Types.ObjectId,
@@ -248,50 +291,6 @@ export class MessagesService {
         throw err;
       }
       throw new InternalServerErrorException('Unable to mark messages as read');
-    }
-  }
-
-  async getAllMessages(
-    userId: Types.ObjectId,
-    chatId: Types.ObjectId,
-    cursor?: string,
-    limit: number = 20,
-  ) {
-    if (!userId || !chatId) {
-      throw new BadRequestException('Invalid input');
-    }
-
-    try {
-      const query: any = { chatId };
-      if (cursor) {
-        query.createdAt = { $lt: new Date(cursor) };
-      }
-
-      const messages = await this.messageModel
-        .find(query)
-        .populate({
-          path: 'senderId',
-          select: 'displayName',
-        })
-        .sort({ createdAt: -1 }) // Sort from newest to oldest
-        .limit(limit)
-        .exec();
-
-      const sortedMessages = messages.reverse();
-
-      // Prepare the next cursor (oldest message's `createdAt`)
-      const nextCursor =
-        messages.length > 0 ? messages[0].createdAt.toISOString() : null;
-
-      return {
-        messages: sortedMessages,
-        nextCursor,
-      };
-    } catch (err) {
-      if (err instanceof HttpException) {
-        throw err;
-      }
-      throw new InternalServerErrorException('Unable to retrieve messages');
     }
   }
 }

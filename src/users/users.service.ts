@@ -3,6 +3,7 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -35,8 +36,28 @@ export class UsersService {
         )
         .exec();
     } catch (err) {
-      if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException(err);
+      throw new NotFoundException('User not found');
+    }
+  }
+
+  async getUserByDisplayName(
+    displayName: string,
+    currentUserId: Types.ObjectId,
+  ) {
+    try {
+      const regex = new RegExp(displayName, 'i');
+      return await this.userModel
+        .find({
+          displayName: { $regex: regex },
+          isDeleted: { $ne: true },
+          _id: { $ne: currentUserId },
+        })
+        .select(
+          '-password -settings -firstName -lastName -email -refresh_token -createdAt -updatedAt -status -isDeleted',
+        )
+        .exec();
+    } catch (err) {
+      throw new NotFoundException('User not found');
     }
   }
 
@@ -60,11 +81,8 @@ export class UsersService {
     }
   }
 
-  async changeAvatar(_id: Types.ObjectId, changeAvatarDto: ChangeAvatarDto) {
+  async changeAvatar(user: User, changeAvatarDto: ChangeAvatarDto) {
     try {
-      const user = await this.userModel.findById(_id).exec();
-
-      if (!user) throw new BadRequestException('User not found');
       const currentAvatar = user.avatarUrl;
       if (currentAvatar) {
         await this.cloudinaryService.removeFile(`${user.email}-avatar`);
@@ -78,18 +96,12 @@ export class UsersService {
 
       return { avatarUrl: newUserAvatar.secure_url };
     } catch (err) {
-      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(err);
     }
   }
 
-  async changePassword(
-    _id: Types.ObjectId,
-    changePasswordDto: ChangePasswordDto,
-  ) {
+  async changePassword(user: User, changePasswordDto: ChangePasswordDto) {
     try {
-      const user = await this.userModel.findById(_id).exec();
-      if (!user) throw new BadRequestException('User not found');
       if (changePasswordDto.currentPassword !== user.password)
         throw new UnauthorizedException('Invalid password');
 
@@ -100,7 +112,7 @@ export class UsersService {
       if (!isPasswordValid) throw new UnauthorizedException('Invalid password');
 
       await this.userModel.findByIdAndUpdate(
-        _id,
+        user._id,
         { password: changePasswordDto.newPassword },
         {
           new: true,
@@ -113,21 +125,6 @@ export class UsersService {
     }
   }
 
-  async getUserByDisplayName(displayName: string) {
-    try {
-      const regex = new RegExp(displayName, 'i');
-      return await this.userModel
-        .find({ displayName: { $regex: regex }, isDeleted: { $ne: true } })
-        .select(
-          '-password -settings -firstName -lastName -email -refresh_token -createdAt -updatedAt -status -isDeleted',
-        )
-        .exec();
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      throw new BadRequestException(err);
-    }
-  }
-
   async deleteUser(_id: Types.ObjectId, deleteUserDto: DeleteUserDto) {
     try {
       const deletedUser = await this.userModel
@@ -136,7 +133,6 @@ export class UsersService {
           path: 'settings',
         })
         .exec();
-      if (!deletedUser) throw new BadRequestException('User not found');
       if (
         deleteUserDto.currentPassword !== deleteUserDto.confirmCurrentPassword
       )

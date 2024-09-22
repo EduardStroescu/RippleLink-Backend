@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   HttpCode,
-  NotFoundException,
   Param,
   Patch,
   UseGuards,
@@ -15,6 +14,7 @@ import { JwtGuard } from 'src/auth/guards';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
@@ -26,6 +26,7 @@ import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { ChangePasswordDto } from './dto/ChangePassword.dto';
 import ChangeAvatarDto from './dto/ChangeAvatar.dto';
 import { PrivateUserDto, PublicUserDto } from 'src/lib/dtos/user.dto';
+import { User } from 'schemas/User.schema';
 
 @ApiTags('Users')
 @Controller('users')
@@ -39,7 +40,7 @@ export class UsersController {
   })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token',
   })
   @UseGuards(JwtGuard)
   @Get(':id')
@@ -54,14 +55,18 @@ export class UsersController {
   })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token',
   })
   @UseGuards(JwtGuard)
   @Get('search/:displayName')
-  async getUserByDisplayName(@Param('displayName') displayName: string) {
-    const findUser = await this.usersService.getUserByDisplayName(displayName);
-    if (!findUser) throw new NotFoundException('User not found');
-    return findUser;
+  async getUserByDisplayName(
+    @Param('displayName') displayName: string,
+    @GetUser('_id') currentUserId: Types.ObjectId,
+  ) {
+    return await this.usersService.getUserByDisplayName(
+      displayName,
+      currentUserId,
+    );
   }
 
   @ApiBearerAuth()
@@ -69,9 +74,12 @@ export class UsersController {
   @ApiBadRequestResponse({
     description: 'Email already exists',
   })
+  @ApiInternalServerErrorResponse({
+    description: "Couldn't update user",
+  })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token',
   })
   @UseGuards(JwtGuard)
   @Patch('update-details')
@@ -96,17 +104,18 @@ export class UsersController {
       },
     },
   })
+  @ApiInternalServerErrorResponse({ description: 'Could not update avatar' })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token',
   })
   @UseGuards(JwtGuard)
   @Patch('change-avatar')
   async changeAvatar(
-    @GetUser('_id') _id: Types.ObjectId,
+    @GetUser() user: User,
     @Body() updateAvatarDto: ChangeAvatarDto,
   ) {
-    return await this.usersService.changeAvatar(_id, updateAvatarDto);
+    return await this.usersService.changeAvatar(user, updateAvatarDto);
   }
 
   @ApiBearerAuth()
@@ -124,15 +133,18 @@ export class UsersController {
   })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token or password',
+  })
+  @ApiInternalServerErrorResponse({
+    description: "Couldn't change password",
   })
   @UseGuards(JwtGuard)
   @Patch('update-password')
   async changePassword(
-    @GetUser('_id') _id: Types.ObjectId,
+    @GetUser() user: User,
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
-    return await this.usersService.changePassword(_id, changePasswordDto);
+    return await this.usersService.changePassword(user, changePasswordDto);
   }
 
   @ApiBearerAuth()
@@ -149,9 +161,12 @@ export class UsersController {
       },
     },
   })
+  @ApiInternalServerErrorResponse({
+    description: 'An error occurred while deleting the user',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token or password',
   })
   @UseGuards(JwtGuard)
   @Delete()

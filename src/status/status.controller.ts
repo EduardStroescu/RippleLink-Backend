@@ -5,6 +5,7 @@ import { UpdateStatusDto } from './dto/UpdateStatus.dto';
 import { Types } from 'mongoose';
 import {
   ApiBearerAuth,
+  ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
@@ -25,11 +26,14 @@ export class StatusController {
     type: StatusDto,
   })
   @ApiNotFoundResponse({
-    description: 'User not found',
+    description: 'User status not found',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Unable to get user status',
   })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token',
   })
   @UseGuards(JwtGuard)
   @Get(':userId')
@@ -43,9 +47,12 @@ export class StatusController {
     description: 'Status updated successfully',
     type: StatusDto,
   })
+  @ApiInternalServerErrorResponse({
+    description: 'Unable to update status',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
-    description: 'Invalid access_token token',
+    description: 'Invalid JWT bearer access token',
   })
   @UseGuards(JwtGuard)
   @Patch()

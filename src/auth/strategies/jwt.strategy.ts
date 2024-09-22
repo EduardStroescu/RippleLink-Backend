@@ -22,11 +22,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   async validate(payload: { sub: number; email: string }) {
     const user = await this.userModel
       .findById(payload.sub)
-      .select('-password')
       .populate({ path: 'chats' })
       .exec();
-    if (!user) throw new UnauthorizedException();
+    if (!user)
+      throw new UnauthorizedException('Invalid JWT bearer access token');
 
-    return user.toObject();
+    return user;
   }
 }

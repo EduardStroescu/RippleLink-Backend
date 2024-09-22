@@ -58,7 +58,6 @@ export class StatusService {
         .findById(_id)
         .populate({ path: 'status' })
         .exec();
-      if (!user) throw new NotFoundException('User not found');
 
       let newStatus: Status;
       if (user.status) {
@@ -75,7 +74,6 @@ export class StatusService {
       await user.save();
       return newStatus.toObject();
     } catch (err) {
-      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException('Unable to update status');
     }
   }

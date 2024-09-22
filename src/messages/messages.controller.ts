@@ -3,7 +3,9 @@ import { MessagesService } from './messages.service';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { JwtGuard } from 'src/auth/guards';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiQuery,
@@ -23,18 +25,6 @@ export class MessagesController {
   ) {}
 
   @ApiBearerAuth()
-  @ApiOkResponse({
-    status: 200,
-    description: 'All messages retrieved successfully',
-    type: [MessageDto],
-  })
-  @ApiNotFoundResponse({
-    description: 'Chat not found by the provided ID',
-  })
-  @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
-    status: 401,
-  })
   @ApiQuery({
     name: 'cursor',
     description:
@@ -49,31 +39,35 @@ export class MessagesController {
     type: Number,
     example: 20,
   })
+  @ApiOkResponse({
+    status: 200,
+    description: 'All messages retrieved successfully',
+    type: [MessageDto],
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid chat id',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Could not retrieve messages',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Invalid JWT bearer access token',
+    status: 401,
+  })
   @UseGuards(JwtGuard)
   @Get(':chatId')
   async getAllMessages(
     @Param('chatId') chatId: Types.ObjectId,
-    @GetUser('_id') userId: Types.ObjectId,
     @Query('cursor') cursor?: string,
     @Query('limit') limit = 20,
   ) {
     if (cursor) {
-      return await this.messagesService.getAllMessages(
-        userId,
-        chatId,
-        cursor,
-        limit,
-      );
+      return await this.messagesService.getAllMessages(chatId, cursor, limit);
     } else {
       return await this.redisService.getOrSetCache(
         `messages?chatId=${chatId}`,
         async () =>
-          await this.messagesService.getAllMessages(
-            userId,
-            chatId,
-            cursor,
-            limit,
-          ),
+          await this.messagesService.getAllMessages(chatId, cursor, limit),
       );
     }
   }

@@ -1,8 +1,4 @@
-import {
-  HttpException,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Settings } from 'schemas/Settings.schema';
@@ -64,7 +60,6 @@ export class SettingsService {
 
       return updatedSettings.toObject();
     } catch (err) {
-      if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException('Unable to update settings');
     }
   }

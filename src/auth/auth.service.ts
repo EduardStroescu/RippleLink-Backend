@@ -90,7 +90,7 @@ export class AuthService {
       );
 
       if (!isPasswordValid)
-        throw new UnauthorizedException('Invalid email or password');
+        throw new UnauthorizedException('Invalid credentials');
 
       const tokens = await this.signTokens(
         user._id as Types.ObjectId,

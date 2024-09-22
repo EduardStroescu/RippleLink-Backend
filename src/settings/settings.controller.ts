@@ -1,6 +1,7 @@
 import { Body, Controller, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiInternalServerErrorResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -20,8 +21,11 @@ export class SettingsController {
     description: 'Settings updated',
     type: UpdateSettingsDto,
   })
+  @ApiInternalServerErrorResponse({
+    description: 'Unable to update settings',
+  })
   @ApiUnauthorizedResponse({
-    description: 'Invalid or expired token',
+    description: 'Invalid JWT bearer access token',
     status: 401,
   })
   @UseGuards(JwtGuard)

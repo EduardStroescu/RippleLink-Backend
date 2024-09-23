@@ -52,10 +52,12 @@ export class AuthService {
       }
 
       newUser = await newUser.save();
-      await this.statusService.createStatus(newUser._id);
+      const status = await this.statusService.createStatus(newUser._id);
 
       const tokens = await this.signTokens(newUser._id, newUser.email);
       await this.updateRefreshToken(newUser._id, tokens.refresh_token);
+      newUser.status = status._id;
+      newUser = await newUser.save();
 
       newUser = await newUser.populate('status');
       newUser = newUser.toObject();

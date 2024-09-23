@@ -46,7 +46,7 @@ export class StatusService {
         userId,
         lastSeen: new Date(),
       });
-      await updatedStatus.save();
+      return await updatedStatus.save();
     } catch (err) {
       throw new InternalServerErrorException('Unable to create status');
     }
@@ -67,7 +67,10 @@ export class StatusService {
           { new: true },
         );
       } else {
-        newStatus = new this.statusModel(updateStatusDto);
+        newStatus = new this.statusModel({
+          userId: user._id,
+          ...updateStatusDto,
+        });
         newStatus = await newStatus.save();
       }
       user.status = newStatus._id;

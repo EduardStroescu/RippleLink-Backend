@@ -30,7 +30,7 @@ Full-Stack live calls and messaging service using SocketIO, WebRTC and NestJS wi
 - [bcrypt](https://www.npmjs.com/package/bcrypt) - Password Encryption
 - [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) - JWT Authentication
 - [cloudinary](https://github.com/cloudinary/cloudinary_npm) - File Uploads
-- [docker](https://www.docker.com/) - Local Development and Testing
+- [docker](https://www.docker.com/) - Image creation for production
 - [dotenv](https://github.com/motdotla/dotenv) - Environment Variables
 - [swagger](https://swagger.io/) - Documentation
 
@@ -87,6 +87,8 @@ ADMIN_PASSWORD=""
 
 ## Running the app
 
+Running a Redis instance is required for the app to run. The instance can be run locally (natively or using Docker) or remotely.
+
 ```bash
 
 # watch mode
@@ -98,16 +100,18 @@ $ npm run start:prod
 
 ## Building for Production
 
+The following are the manual steps to build the image for production, but I've also included a github action that will build and push the image to DockerHub.
+
 ```bash
 
 # build docker image from Dockerfile
-docker build -t username/ripple-link:latest .
+docker build -t {{username}}/ripple-link:latest . --no-cache
 
 # push to DockerHub
-docker push username/ripple-link:latest
+docker push {{username}}/ripple-link:latest
 
 push repo to GitHub
 
-deploy to e.g. koyeb from github repo - requires Dockerfile.koyeb for koyeb to use docker-compose
+deploy to e.g. Koyeb from github repo - requires Dockerfile.koyeb for Koyeb to use docker-compose for the build stage. Expose port 3000 on path "/" and health checks on path "/api/health" - port 3000.
 
 ```

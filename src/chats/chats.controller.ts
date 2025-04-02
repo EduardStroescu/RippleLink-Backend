@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiInternalServerErrorResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -47,7 +48,7 @@ export class ChatsController {
     type: [ChatDto],
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to retrieve chats',
+    description: 'Unable to retrieve chats. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',
@@ -67,11 +68,11 @@ export class ChatsController {
     description: 'Chat created successfully',
     type: ChatDto,
   })
-  @ApiBadRequestResponse({
+  @ApiNotFoundResponse({
     description: 'One or more users not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to create chat',
+    description: 'Unable to create chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',
@@ -89,27 +90,36 @@ export class ChatsController {
       createChatDto,
     );
 
-    await this.gatewayService.createChat(userId, newChat, wasExistingChat);
+    await this.gatewayService.createChat(newChat, wasExistingChat);
     return newChat;
   }
 
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    description: 'Shared files retrieved successfully',
-    type: [MessageDto],
+    description:
+      'Shared files retrieved successfully. Returns an empty array if no files are found.',
+    type: MessageDto,
+    isArray: true,
+  })
+  @ApiNotFoundResponse({
+    description: 'Chat not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to retrieve shared files',
+    description: 'Unable to retrieve shared files. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description:
+      'Invalid JWT bearer access token or you are not a member of the chat.',
     status: 401,
   })
   @UseGuards(JwtGuard)
   @Get('sharedFiles/:chatId')
-  async getSharedFiles(@Param('chatId') chatId: string) {
-    return await this.chatsService.getSharedFiles(chatId);
+  async getSharedFiles(
+    @GetUser('_id') userId: Types.ObjectId,
+    @Param('chatId') chatId: string,
+  ) {
+    return await this.chatsService.getSharedFiles(userId, chatId);
   }
 
   @ApiBearerAuth()
@@ -118,11 +128,12 @@ export class ChatsController {
     description: 'Chat updated successfully',
     type: ChatDto,
   })
-  @ApiBadRequestResponse({
+  @ApiBadRequestResponse({ description: 'Invalid chat id provided' })
+  @ApiNotFoundResponse({
     description: 'Chat not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to update chat',
+    description: 'Unable to update chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',
@@ -157,14 +168,15 @@ export class ChatsController {
       },
     },
   })
-  @ApiBadRequestResponse({
-    description: 'Chat not found or you are not a member of this chat',
+  @ApiNotFoundResponse({
+    description: 'Chat not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to delete chat',
+    description: 'Unable to delete chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description:
+      'Invalid JWT bearer access token or you are not a member of this chat',
     status: 401,
   })
   @UseGuards(JwtGuard)

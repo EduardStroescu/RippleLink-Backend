@@ -72,7 +72,7 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({
     type: String,
-    description: 'Avatar Url.',
+    description: 'Avatar image as a base64 encoded string.',
     minLength: 5,
     maxLength: 20,
   })

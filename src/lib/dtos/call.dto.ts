@@ -1,21 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatDto } from './chat.dto';
+import { Types } from 'mongoose';
 
 export class OfferDto {
   @ApiProperty({
-    description: 'Recipient user ID for the offer',
+    description: 'Recipient user ID for the offer.',
     type: String,
   })
   to: string;
 
   @ApiProperty({
-    description: 'Session Description Protocol (SDP) for the offer',
+    description: 'Session Description Protocol (SDP) for the offer.',
     type: String,
   })
   sdp: string;
 
   @ApiProperty({
-    description: 'List of ICE candidates for the offer',
+    description: 'List of ICE candidates for the offer.',
     type: [String],
   })
   iceCandidates: string[];
@@ -23,19 +24,19 @@ export class OfferDto {
 
 export class AnswerDto {
   @ApiProperty({
-    description: 'Recipient user ID for the answer',
+    description: 'Recipient user ID for the answer.',
     type: String,
   })
   to: string;
 
   @ApiProperty({
-    description: 'Session Description Protocol (SDP) for the answer',
+    description: 'Session Description Protocol (SDP) for the answer.',
     type: String,
   })
   sdp: string;
 
   @ApiProperty({
-    description: 'List of ICE candidates for the answer',
+    description: 'List of ICE candidates for the answer.',
     type: [String],
   })
   iceCandidates: string[];
@@ -43,24 +44,30 @@ export class AnswerDto {
 
 class ParticipantDto {
   @ApiProperty({
-    description: 'User ID of the participant',
-    type: String,
+    description: 'User id, displayName and avatarUrl of the participant.',
+    type: Types.ObjectId,
   })
-  userId: string;
+  userId: Types.ObjectId;
 
   @ApiProperty({
-    description: 'List of offers made by the participant',
+    description: 'List of offers made by the participant.',
     type: [OfferDto],
     required: false,
   })
   offers?: OfferDto[];
 
   @ApiProperty({
-    description: 'List of answers received by the participant',
+    description: 'List of answers sent by the participant.',
     type: [AnswerDto],
     required: false,
   })
   answers?: AnswerDto[];
+
+  @ApiProperty({
+    description: 'Status of the participant relative to the call.',
+    oneOf: [{ type: 'string', enum: ['notified', 'inCall', 'rejected'] }],
+  })
+  status: 'notified' | 'inCall' | 'rejected';
 }
 
 export class CallDto {
@@ -77,8 +84,21 @@ export class CallDto {
   chatId: ChatDto;
 
   @ApiProperty({
-    description: 'List of participants in the call',
+    description:
+      'List of all participants in the call. Automatically populated with all users in chat.',
     type: [ParticipantDto],
   })
   participants: ParticipantDto[];
+
+  @ApiProperty({
+    description: 'Current status of the call.',
+    oneOf: [{ type: 'string', enum: ['ongoing', 'ended'] }],
+  })
+  status: 'ongoing' | 'ended';
+
+  @ApiProperty({
+    description: 'Date when the call was created',
+    type: String,
+  })
+  createdAt: string;
 }

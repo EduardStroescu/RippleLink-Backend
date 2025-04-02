@@ -1,103 +1,97 @@
 import { Injectable } from '@nestjs/common';
-import { v2 as cloudinary } from 'cloudinary';
-import { CloudinaryResponse } from './cloudinary-response';
+import {
+  v2 as cloudinary,
+  UploadApiErrorResponse,
+  UploadApiOptions,
+  UploadApiResponse,
+} from 'cloudinary';
+import { Readable } from 'stream';
 
 @Injectable()
 export class CloudinaryService {
-  async uploadAvatar(
-    base64String: string,
-    email: string,
-  ): Promise<CloudinaryResponse> {
-    return new Promise<CloudinaryResponse>(async (resolve, reject) => {
-      const uploadOptions = {
-        upload_preset: 'unsigned_upload',
-        public_id: `${email}-avatar`,
-        invalidate: true,
-        allowed_formats: [
-          'png',
-          'jpg',
-          'jpeg',
-          'gif',
-          'svg',
-          'ico',
-          'jfif',
-          'webp',
-        ],
-        transformation: [{ crop: 'fill' }],
-      };
+  async uploadBase64String(
+    uploadType: 'avatar' | 'background' | 'other',
+    userId: string,
+    { name, base64String }: { name?: string; base64String: string },
+  ) {
+    const uploadOptions: UploadApiOptions = {
+      upload_preset: 'unsigned_upload',
+      resource_type: 'auto',
+      public_id: name?.split('.')[0],
+      folder: `${userId}-files`,
+      unique_filename: true,
+      use_asset_folder_as_public_id_prefix: true,
+    };
+    if (uploadType !== 'other') {
+      uploadOptions.public_id = `${userId}-${uploadType}`;
+      uploadOptions.invalidate = true;
+      uploadOptions.overwrite = true;
+      uploadOptions.allowed_formats = [
+        'png',
+        'jpg',
+        'jpeg',
+        'gif',
+        'svg',
+        'ico',
+        'jfif',
+        'webp',
+      ];
+      uploadOptions.transformation = [{ crop: 'fill' }];
+    }
+    try {
+      return await cloudinary.uploader.upload(base64String, uploadOptions);
+    } catch (error: unknown) {
+      throw error as UploadApiErrorResponse;
+    }
+  }
 
-      cloudinary.uploader.upload(
-        base64String,
+  uploadFileStream(
+    uploadType: 'avatar' | 'background' | 'other',
+    userId: string,
+    { name, buffer }: { name?: string; buffer: Buffer },
+  ) {
+    const uploadOptions: UploadApiOptions = {
+      upload_preset: 'unsigned_upload',
+      resource_type: 'auto',
+      public_id: name?.split('.')[0],
+      folder: `${userId}-files`,
+      unique_filename: true,
+      use_asset_folder_as_public_id_prefix: true,
+    };
+    if (uploadType !== 'other') {
+      uploadOptions.public_id = `${userId}-${uploadType}`;
+      uploadOptions.invalidate = true;
+      uploadOptions.allowed_formats = [
+        'png',
+        'jpg',
+        'jpeg',
+        'gif',
+        'svg',
+        'ico',
+        'jfif',
+        'webp',
+      ];
+      uploadOptions.transformation = [{ crop: 'fill' }];
+    }
+
+    return new Promise<UploadApiResponse>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
         uploadOptions,
         (error, result) => {
           if (error) return reject(error);
           resolve(result);
         },
       );
+      const stream = Readable.from(buffer);
+      stream.pipe(uploadStream);
     });
   }
 
-  async uploadImageFile(base64String: string): Promise<CloudinaryResponse> {
-    return new Promise<CloudinaryResponse>(async (resolve, reject) => {
-      const uploadOptions = {
-        upload_preset: 'unsigned_upload',
-        allowed_formats: [
-          'png',
-          'jpg',
-          'jpeg',
-          'gif',
-          'svg',
-          'ico',
-          'jfif',
-          'webp',
-        ],
-        transformation: [{ crop: 'fill' }],
-      };
-
-      cloudinary.uploader.upload(
-        base64String,
-        uploadOptions,
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result);
-        },
-      );
-    });
-  }
-
-  async uploadOtherFileTypes(
-    base64String: string,
-  ): Promise<CloudinaryResponse> {
-    return new Promise<CloudinaryResponse>(async (resolve, reject) => {
-      const RESOURCE_TYPE: 'auto' | 'image' | 'video' | 'raw' = 'auto';
-      const uploadOptions = {
-        upload_preset: 'unsigned_upload',
-        resource_type: RESOURCE_TYPE,
-      };
-
-      cloudinary.uploader.upload(
-        base64String,
-        uploadOptions,
-        (error, result) => {
-          if (error) {
-            console.error(error);
-            return reject(error);
-          }
-          resolve(result);
-        },
-      );
-    });
-  }
-
-  async removeFile(publicId: string) {
-    return new Promise<CloudinaryResponse>(async (resolve, reject) => {
-      const deleteOptions = {
-        invalidate: true,
-      };
-      cloudinary.uploader.destroy(publicId, deleteOptions, (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      });
-    });
+  removeFiles(publicIds: string[], resourceType: string) {
+    const deleteOptions = {
+      invalidate: true,
+      resource_type: resourceType,
+    };
+    void cloudinary.api.delete_resources(publicIds, deleteOptions);
   }
 }

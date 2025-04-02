@@ -3,7 +3,7 @@ import { IsNotEmpty, IsString } from 'class-validator';
 
 export default class ChangeAvatarDto {
   @ApiProperty({
-    description: 'Avatar URL base64 encoded',
+    description: 'Avatar file as a base64 encoded string.',
     type: String,
   })
   @IsString()

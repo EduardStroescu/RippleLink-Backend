@@ -11,10 +11,13 @@ import {
 } from '@nestjs/websockets';
 import { Types } from 'mongoose';
 import { Chat } from 'schemas/Chat.schema';
-import { Message } from 'schemas/Message.schema';
+import { FileContent, Message } from 'schemas/Message.schema';
 import { Server, Socket } from 'socket.io';
 import { CallsService } from 'src/calls/calls.service';
+import { FileUploaderService } from 'src/fileUploader/fileUploader.provider';
 import { CallDto } from 'src/lib/dtos/call.dto';
+import { MessageDto } from 'src/lib/dtos/message.dto';
+import { getCallDuration } from 'src/lib/utils';
 import { MessagesService } from 'src/messages/messages.service';
 import { RedisService } from 'src/redis/redis.service';
 
@@ -29,6 +32,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly redisService: RedisService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly fileUploaderService: FileUploaderService,
   ) {}
 
   async handleConnection(@ConnectedSocket() socket: Socket) {
@@ -93,12 +97,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('typing')
   async handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { room: string; isTyping: boolean },
+    @MessageBody() body: { chatId: string; isTyping: boolean },
   ) {
-    const { room, isTyping } = body;
+    const { chatId, isTyping } = body;
     const { _id, displayName } = client.handshake.query;
 
-    client.broadcast.to(room).emit('interlocutorIsTyping', {
+    client.broadcast.to(chatId).emit('interlocutorIsTyping', {
       content: { user: { _id, displayName }, isTyping },
     });
   }
@@ -108,31 +112,31 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody()
     body: {
-      room: string;
-      message: string;
-      type: 'text' | 'image' | 'video' | 'audio' | 'file';
-      tempId?: string;
+      chatId: string;
+      content: Message['content'];
+      type: Message['type'];
     },
   ) {
-    const { room, message, type, tempId } = body;
+    const { chatId, content, type } = body;
     const { _id } = client.handshake.query;
     try {
       const { newMessage, newChat } = await this.messagesService.createMessage(
-        new Types.ObjectId(room),
+        new Types.ObjectId(chatId),
         new Types.ObjectId(_id as string),
-        message,
+        content,
         type,
       );
       const data = await this.redisService.invalidateCacheKey(
-        `messages?chatId=${room}`,
+        `messages?chatId=${chatId}`,
         async () => newMessage,
       );
 
       this.updateChat(newChat, 'create');
-      client.emit('messageCreated', { content: { ...data, tempId } });
-      client.broadcast.to(room).emit('messageCreated', {
+      client.emit('messageCreated', { content: data });
+      client.broadcast.to(chatId).emit('messageCreated', {
         content: data,
       });
+      if (type === 'file') return { status: 'sent', message: newMessage };
     } catch (err) {
       this.handleError(client, err.message);
     }
@@ -141,9 +145,10 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('updateMessage')
   async updateMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { room: string; messageId: string; message: string },
+    @MessageBody()
+    body: { chatId: string; messageId: string; content: Message['content'] },
   ) {
-    const { room, messageId, message } = body;
+    const { chatId, messageId, content } = body;
     const { _id } = client.handshake.query;
 
     try {
@@ -151,19 +156,19 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.messagesService.updateMessage(
           new Types.ObjectId(messageId),
           new Types.ObjectId(_id as string),
-          new Types.ObjectId(room),
-          message,
+          new Types.ObjectId(chatId),
+          content,
         );
 
       const response = await this.redisService.invalidateCacheKey(
-        `messages?chatId=${room}`,
+        `messages?chatId=${chatId}`,
         async () => updatedMessage,
       );
       if (updatedChat) {
         this.updateChat(updatedChat, 'update');
       }
 
-      this.server.to(room).emit(`messageUpdated`, {
+      this.server.to(chatId).emit(`messageUpdated`, {
         content: response,
       });
     } catch (err) {
@@ -174,9 +179,9 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('deleteMessage')
   async deleteMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { room: string; messageId: string },
+    @MessageBody() body: { chatId: string; messageId: string },
   ) {
-    const { room, messageId } = body;
+    const { chatId, messageId } = body;
     const { _id } = client.handshake.query;
 
     try {
@@ -184,17 +189,17 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.messagesService.deleteMessage(
           new Types.ObjectId(messageId),
           new Types.ObjectId(_id as string),
-          new Types.ObjectId(room),
+          new Types.ObjectId(chatId),
         );
       const response = await this.redisService.invalidateCacheKey(
-        `messages?chatId=${room}`,
+        `messages?chatId=${chatId}`,
         async () => deletedMessage,
       );
       if (updatedChat) {
         this.updateChat(updatedChat, 'delete');
       }
 
-      this.server.to(room).emit('messageDeleted', {
+      this.server.to(chatId).emit('messageDeleted', {
         content: response,
       });
     } catch (err) {
@@ -205,28 +210,29 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('readMessages')
   async readMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { room: string },
+    @MessageBody() body: { chatId: string },
   ) {
-    const { room } = body;
+    const { chatId } = body;
     const { _id } = client.handshake.query;
 
     try {
       const updatedChat = await this.messagesService.readMessage(
         new Types.ObjectId(_id as string),
-        new Types.ObjectId(room),
+        new Types.ObjectId(chatId),
       );
+      // TODO: FINISH THIS
       await this.redisService.updateInCacheByFilter<Message>(
-        `messages?chatId=${room}`,
-        { senderId: { $ne: _id as string } },
-        'read',
-        true,
+        `messages?chatId=${chatId}`,
+        { senderId: { $ne: _id } },
+        'readBy',
+        updatedChat.lastMessage.readBy,
       );
       this.updateChat(updatedChat, 'update');
-      this.server.to(room).emit('messagesRead', {
+      this.server.to(chatId).emit('messagesRead', {
         content: updatedChat,
       });
     } catch (err) {
-      this.handleError(client, 'Failed to mark messages as read');
+      // ignore error
     }
   }
 
@@ -244,37 +250,37 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       if (isInitiator) {
-        const updatedCall = await this.callService.joinCall(
-          new Types.ObjectId(_id as string),
-          new Types.ObjectId(chatId),
-        );
-        client.emit('callJoined', { call: updatedCall });
+        const newCall = await this.callService.joinCall(_id as string, chatId);
+        await this.createMessage(client, {
+          chatId,
+          content: `Call Started`,
+          type: 'event',
+        });
+        client.emit('callJoined', { call: newCall });
       } else {
-        const call = await this.callService.getCall(new Types.ObjectId(chatId));
-
         const checkInterval = setInterval(async () => {
           const iceSent = await this.callService.checkIfEveryoneInCallSentIce(
-            new Types.ObjectId(call._id),
-            new Types.ObjectId(_id as string),
+            chatId,
+            _id as string,
           );
 
           if (iceSent) {
             clearInterval(checkInterval);
             clearTimeout(timeout);
 
-            const updatedCall = await this.callService.joinCall(
-              new Types.ObjectId(_id as string),
-              new Types.ObjectId(chatId),
+            const existingCall = await this.callService.joinCall(
+              _id as string,
+              chatId,
             );
 
-            client.emit('callJoined', { call: updatedCall });
+            client.emit('callJoined', { call: existingCall });
           }
         }, 1000);
 
         const maxWaitTime = 10000; // 10 seconds
         const timeout = setTimeout(() => {
           clearInterval(checkInterval);
-          client.emit('callJoined', { error: 'Call timeout' });
+          client.emit('callJoined', { error: 'Call join timeout' });
         }, maxWaitTime);
       }
     } catch (err) {
@@ -282,64 +288,35 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage('initiateCall')
-  async initiateCall(
+  @SubscribeMessage('sendCallEvent')
+  async sendCallEvent(
     @MessageBody()
     body: {
       chatId: string;
       offer?: any;
-      participantId: string;
-      saveToDb?: boolean;
-    },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { chatId, offer, participantId, saveToDb } = body;
-    const { _id } = client.handshake.query;
-    try {
-      if (saveToDb) {
-        await this.callService.callUpdate({
-          _id: new Types.ObjectId(_id as string),
-          chatId: new Types.ObjectId(chatId),
-          to: new Types.ObjectId(participantId),
-          offer,
-        });
-      }
-      client.broadcast
-        .to(participantId)
-        .emit('callCreated', { offer, participantId: _id });
-    } catch (err) {
-      this.handleError(client, 'Failed to create call');
-    }
-  }
-
-  @SubscribeMessage('sendCallAnswer')
-  async answerCall(
-    @MessageBody()
-    body: {
-      chatId: string;
       answer?: any;
       participantId: string;
       saveToDb?: boolean;
     },
     @ConnectedSocket() client: Socket,
   ) {
-    const { chatId, answer, participantId, saveToDb } = body;
+    const { chatId, offer, answer, participantId, saveToDb } = body;
     const { _id } = client.handshake.query;
     try {
       if (saveToDb) {
-        const updatedCall = await this.callService.callUpdate({
-          _id: new Types.ObjectId(_id as string),
-          chatId: new Types.ObjectId(chatId),
-          to: new Types.ObjectId(participantId),
+        await this.callService.callUpdate({
+          _id: _id as string,
+          chatId,
+          to: participantId,
+          offer,
           answer,
         });
-        await this.updateCalls(updatedCall);
       }
       client.broadcast
         .to(participantId)
-        .emit('callAnswered', { answer, participantId: _id });
+        .emit('callEvent', { message: offer ?? answer, participantId: _id });
     } catch (err) {
-      this.handleError(client, 'Failed to answer call');
+      this.handleError(client, 'Failed to send call event');
     }
   }
 
@@ -358,12 +335,12 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { _id } = client.handshake.query;
 
     try {
-      const updatedCall = await this.callService.queueIceCandidates({
-        _id: new Types.ObjectId(_id as string),
-        chatId: new Types.ObjectId(chatId),
+      const updatedCall = await this.callService.saveIceCandidates({
+        _id: _id as string,
+        chatId: chatId,
         iceCandidates,
         candidatesType,
-        to: new Types.ObjectId(to),
+        to: to,
       });
       if (!updatedCall) return;
       await this.updateCalls(updatedCall);
@@ -374,42 +351,119 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('endCall')
   async endCall(
-    @MessageBody() body: { callId: string; answer: any },
+    @MessageBody() body: { chatId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const { callId } = body;
+    const { chatId } = body;
     const { _id } = client.handshake.query;
 
     try {
-      const { updatedCall, callEnded } = await this.callService.endCall(
-        new Types.ObjectId(_id as string),
-        new Types.ObjectId(callId),
-      );
-      if (!callEnded) {
+      const updatedCall = await this.callService.endCall(_id as string, chatId);
+      if (updatedCall.status !== 'ended') {
         await this.updateCalls(updatedCall);
       } else {
-        await this.deleteCalls({ ...updatedCall, callEnded });
+        await this.deleteCalls({ ...updatedCall });
+        await this.createMessage(client, {
+          chatId,
+          content: `Call Ended ${getCallDuration(updatedCall.createdAt)}`,
+          type: 'event',
+        });
       }
+    } catch (_) {
+      // Ignore error
+    }
+  }
+
+  @SubscribeMessage('rejectCall')
+  async rejectCall(
+    @MessageBody() body: { chatId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { chatId } = body;
+    const { _id } = client.handshake.query;
+
+    try {
+      const updatedCall = await this.callService.rejectCall(
+        _id as string,
+        chatId,
+      );
+      await this.updateCalls(updatedCall);
     } catch (err) {
       this.handleError(client, err.message);
     }
   }
 
-  async createChat(
-    chatCreatorId: Types.ObjectId,
-    chat: Chat,
-    existingChat: boolean,
+  @SubscribeMessage('sendChunkedFile')
+  async sendChunkedFile(
+    @MessageBody()
+    body: {
+      message: MessageDto & { content: FileContent };
+      fileId: string;
+      name: string;
+      chunk: Buffer;
+      index: number;
+      totalChunks: number;
+    },
+    @ConnectedSocket() client: Socket,
   ) {
-    const onlineUsers = (await this.redisService.getOnlineUsers())?.filter(
-      (id) => id !== chatCreatorId.toString(),
-    );
+    const { message, fileId, name, chunk, index, totalChunks } = body;
+    const { _id } = client.handshake.query;
+    try {
+      const response = await this.fileUploaderService.uploadChunkedFile(
+        'other',
+        _id as string,
+        message,
+        {
+          fileId,
+          name,
+          chunk,
+          index,
+          totalChunks,
+        },
+      );
+
+      if (typeof response === 'string') {
+        const fileIdx = message.content.findIndex(
+          (file) => file.fileId === fileId,
+        );
+        message.content[fileIdx].content = response;
+      }
+
+      if (response instanceof Map) {
+        this.updateMessage(client, {
+          chatId: message.chatId,
+          messageId: message._id,
+          content: message.content.map((file) => ({
+            ...file,
+            content: response.get(file.fileId),
+          })),
+        });
+        return { success: true };
+      }
+
+      this.server.to(message.chatId).emit(`messageUpdated`, {
+        content: message,
+      });
+      return { success: true };
+    } catch (err) {
+      this.deleteMessage(client, {
+        chatId: message.chatId,
+        messageId: message._id,
+      });
+
+      this.handleError(client, "Couldn't send file. Please try again later!");
+      return { success: false };
+    }
+  }
+
+  async createChat(chat: Chat, existingChat: boolean) {
+    const onlineUsers = await this.redisService.getOnlineUsers();
 
     const onlineUserSet = new Set(onlineUsers);
-    const onlineUserIds = chat.users
-      .map((user) => user._id.toString())
-      .filter((userId) => onlineUserSet.has(userId));
-
     const newChatUsers = chat.users.map((user) => user._id.toString());
+    const onlineUserIds = newChatUsers.filter((userId) =>
+      onlineUserSet.has(userId),
+    );
 
     await this.redisService.invalidateCacheKey(
       `messages?chatId=${chat._id}`,
@@ -427,7 +481,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
           `chats?userId=${userId}`,
           async () => chat,
         );
-        this.server.to(String(chat._id)).emit('messageCreated', {
+        this.server.to(chat._id.toString()).emit('messageCreated', {
           content: chat.lastMessage,
         });
       }
@@ -494,7 +548,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private async handleError(client: Socket, error: string) {
+  private handleError(client: Socket, error: string) {
     client.emit('error', {
       message: error,
     });

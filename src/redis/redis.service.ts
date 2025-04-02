@@ -3,18 +3,17 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { Types } from 'mongoose';
 import { ResetRedisCacheDto } from './dto/ResetRedisCache.dto';
 import { ConfigService } from '@nestjs/config';
 import { StatusService } from 'src/status/status.service';
+import { CallDto } from 'src/lib/dtos/call.dto';
 
 type QueryOperator = '$eq' | '$ne' | '$gt' | '$lt' | '$gte' | '$lte';
 type QueryFilter<T> = Partial<Record<keyof T, { [op in QueryOperator]?: any }>>;
-
-const EXPIRE_TIME_GENERAL_DATA = 3600;
-const EXPIRE_TIME_ONLINE_USERS = 3600;
 
 interface Identifiable {
   _id: Types.ObjectId;
@@ -22,6 +21,9 @@ interface Identifiable {
 
 @Injectable()
 export class RedisService {
+  EXPIRE_TIME_GENERAL_DATA = 3600; // 1 hour
+  EXPIRE_TIME_ONLINE_USERS = 3600; // 1 hour
+
   constructor(
     @InjectRedis() private readonly redis: Redis,
     private readonly configService: ConfigService,
@@ -42,15 +44,13 @@ export class RedisService {
 
       await this.redis.setex(
         key,
-        EXPIRE_TIME_GENERAL_DATA,
+        this.EXPIRE_TIME_GENERAL_DATA,
         JSON.stringify(freshData),
       );
 
       return freshData;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
       );
@@ -77,7 +77,7 @@ export class RedisService {
         // Update the cache with the modified array
         await this.redis.setex(
           key,
-          EXPIRE_TIME_GENERAL_DATA,
+          this.EXPIRE_TIME_GENERAL_DATA,
           JSON.stringify(parsedData),
         );
       }
@@ -85,9 +85,7 @@ export class RedisService {
       // Return only the new data
       return newData;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
       );
@@ -125,7 +123,7 @@ export class RedisService {
         // Update the cache with the modified array
         await this.redis.setex(
           key,
-          EXPIRE_TIME_GENERAL_DATA,
+          this.EXPIRE_TIME_GENERAL_DATA,
           JSON.stringify(parsedData),
         );
       }
@@ -133,9 +131,7 @@ export class RedisService {
       // Return only the updated data
       return updatedData;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
       );
@@ -194,14 +190,12 @@ export class RedisService {
 
         await this.redis.setex(
           key,
-          EXPIRE_TIME_GENERAL_DATA,
+          this.EXPIRE_TIME_GENERAL_DATA,
           JSON.stringify(parsedData),
         );
       }
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
       );
@@ -229,7 +223,7 @@ export class RedisService {
           // Update the cache with the modified array
           await this.redis.setex(
             key,
-            EXPIRE_TIME_GENERAL_DATA,
+            this.EXPIRE_TIME_GENERAL_DATA,
             JSON.stringify(parsedData),
           );
         }
@@ -238,9 +232,7 @@ export class RedisService {
       // Return only the deleted data
       return deletedData;
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
       );
@@ -255,9 +247,7 @@ export class RedisService {
       this.redis.del(key);
       return await cb();
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
       );
@@ -267,7 +257,11 @@ export class RedisService {
   // Add user to the online users redis set
   async connectUser(userId: string): Promise<void> {
     try {
-      await this.redis.sadd('onlineUsers', userId, EXPIRE_TIME_ONLINE_USERS);
+      await this.redis.sadd(
+        'onlineUsers',
+        userId,
+        this.EXPIRE_TIME_ONLINE_USERS,
+      );
     } catch (error) {
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,
@@ -282,7 +276,7 @@ export class RedisService {
       await this.statusService.disconnectUser(new Types.ObjectId(userId));
     } catch (error) {
       throw new InternalServerErrorException(
-        'Error removing user from online set',
+        'An unexpected error occured. Please try again later!',
       );
     }
   }
@@ -302,7 +296,7 @@ export class RedisService {
       return !!(await this.redis.sismember('onlineUsers', userId));
     } catch (error) {
       throw new InternalServerErrorException(
-        `An unexpected error occured. Please try again later!`,
+        `User status not found. Please try again later!`,
       );
     }
   }
@@ -331,6 +325,204 @@ export class RedisService {
       }
 
       await this.redis.flushall();
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async formatCallForUser(call: CallDto): Promise<CallDto> {
+    const participants: CallDto['participants'] = await Promise.all(
+      call.participants.map(
+        async (participant: CallDto['participants'][number]) => {
+          return {
+            ...participant,
+            offers: await Promise.all(
+              participant.offers.map(async (offer) => ({
+                ...offer,
+                sdp: await this.getSDP(
+                  participant.userId._id.toString(),
+                  offer.to,
+                  'offer',
+                ),
+                iceCandidates: await this.getIce({
+                  from: participant.userId._id.toString(),
+                  to: offer.to,
+                  type: 'offer',
+                }),
+              })),
+            ),
+            answers: await Promise.all(
+              participant.answers.map(async (answer) => ({
+                ...answer,
+                sdp: await this.getSDP(
+                  participant.userId._id.toString(),
+                  answer.to,
+                  'answer',
+                ),
+                iceCandidates: await this.getIce({
+                  from: participant.userId._id.toString(),
+                  to: answer.to,
+                  type: 'answer',
+                }),
+              })),
+            ),
+          };
+        },
+      ),
+    );
+    call.participants = participants;
+
+    return call;
+  }
+
+  async getFormattedCall(chatId: string) {
+    try {
+      const call = await this.redis.hgetall(`call:${chatId}`);
+      if (Object.keys(call).length === 0) return null;
+      call.chatId = JSON.parse(call.chatId);
+      call.participants = JSON.parse(call.participants);
+
+      return await this.formatCallForUser(call as unknown as CallDto);
+    } catch (error) {
+      throw new NotFoundException('Call not found.');
+    }
+  }
+
+  async getUnformattedCall(chatId: string): Promise<CallDto> {
+    try {
+      const call = await this.redis.hgetall(`call:${chatId}`);
+      if (Object.keys(call).length === 0) return null;
+      call.chatId = JSON.parse(call.chatId);
+      call.participants = JSON.parse(call.participants);
+
+      return call as unknown as CallDto;
+    } catch (error) {
+      throw new NotFoundException('Call not found.');
+    }
+  }
+
+  async setCall(chatId: string, call: CallDto) {
+    try {
+      const formattedCall = {
+        ...call,
+        participants: JSON.stringify(call.participants),
+        chatId: JSON.stringify(call.chatId),
+      };
+      await this.redis.hset(`call:${chatId}`, formattedCall);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async deleteCall(chatId: string) {
+    try {
+      const call = await this.getUnformattedCall(chatId);
+      await this.deleteAllIceAndSDPForCall(call.participants);
+
+      await this.redis.del(`call:${chatId}`);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async addIce({
+    from,
+    to,
+    type,
+    iceCandidates,
+  }: {
+    from: string;
+    to: string;
+    type: string;
+    iceCandidates: any;
+  }) {
+    try {
+      await this.redis.rpush(`ice:${from}:${to}:${type}`, iceCandidates);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async getIce({ from, to, type }: { from: string; to: string; type: string }) {
+    try {
+      const ice = await this.redis.lrange(`ice:${from}:${to}:${type}`, 0, -1);
+      return ice;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async addOrReplaceSDP(userId: string, to: string, sdp: string, type: string) {
+    try {
+      await this.redis.set(`sdp:${userId}:${to}:${type}`, sdp);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async getSDP(userId: string, to: string, type: string) {
+    try {
+      return await this.redis.get(`sdp:${userId}:${to}:${type}`);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async deleteIceAndSDPForParticipant(
+    participant: CallDto['participants'][number],
+  ) {
+    try {
+      const delKeys = [];
+
+      participant.offers.forEach((offer) => {
+        delKeys.push(`ice:${participant.userId._id}:${offer.to}:offer`);
+        delKeys.push(`sdp:${participant.userId._id}:${offer.to}:offer`);
+      });
+      participant.answers.forEach((answer) => {
+        delKeys.push(`ice:${participant.userId._id}:${answer.to}:answer`);
+        delKeys.push(`sdp:${participant.userId._id}:${answer.to}:answer`);
+      });
+      await this.redis.del([...delKeys]);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  async deleteAllIceAndSDPForCall(participants: CallDto['participants']) {
+    try {
+      const delKeys: string[] = [];
+
+      participants.forEach((participant) => {
+        participant.offers.forEach((offer) => {
+          delKeys.push(`ice:${participant.userId._id}:${offer.to}:offer`);
+          delKeys.push(`sdp:${participant.userId._id}:${offer.to}:offer`);
+        });
+        participant.answers.forEach((answer) => {
+          delKeys.push(`ice:${participant.userId._id}:${answer.to}:answer`);
+          delKeys.push(`sdp:${participant.userId._id}:${answer.to}:answer`);
+        });
+      });
+
+      if (delKeys.length > 0) {
+        await this.redis.del(...delKeys);
+      }
     } catch (error) {
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,

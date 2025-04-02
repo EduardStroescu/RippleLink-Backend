@@ -1,11 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
   IsEnum,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { Message } from 'schemas/Message.schema';
+
+class LastMessageDto {
+  @ApiProperty({
+    description: 'The content of the message',
+    oneOf: [
+      { type: 'string' },
+      { type: 'array', items: { type: Message['content'] } },
+    ],
+  })
+  content: Message['content'];
+
+  @ApiProperty({
+    description: 'The type of the message',
+    oneOf: [{ type: 'string', enum: ['text', 'file', 'event'] }],
+  })
+  @IsString()
+  type: Message['type'];
+}
 
 export class CreateChatDto {
   @ApiPropertyOptional({
@@ -35,17 +56,10 @@ export class CreateChatDto {
   userIds: string[];
 
   @ApiProperty({
-    description: 'Message type',
-    enum: ['text', 'image', 'video', 'file', 'audio'],
-    example: ['text', 'image', 'video', 'file', 'audio'],
-  })
-  @IsEnum(['text', 'image', 'video', 'file', 'audio'])
-  messageType: 'text' | 'image' | 'video' | 'file' | 'audio';
-
-  @ApiProperty({
     description: 'The content of the first message in the chat',
-    type: String,
+    type: LastMessageDto,
   })
-  @IsString()
-  lastMessage: string;
+  @ValidateNested()
+  @Type(() => LastMessageDto)
+  lastMessage: LastMessageDto;
 }

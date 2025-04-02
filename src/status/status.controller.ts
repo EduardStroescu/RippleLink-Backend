@@ -29,7 +29,7 @@ export class StatusController {
     description: 'User status not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to get user status',
+    description: 'Unable to get user status. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -48,7 +48,7 @@ export class StatusController {
     type: StatusDto,
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to update status',
+    description: 'Unable to update status. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     status: 401,

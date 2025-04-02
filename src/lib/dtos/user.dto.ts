@@ -34,7 +34,7 @@ export class PrivateUserDto {
   displayName?: string;
 
   @ApiPropertyOptional({
-    description: "URL to the user's avatar image",
+    description: "URL to the user's avatar image.",
     type: String,
   })
   avatarUrl?: string;
@@ -52,7 +52,7 @@ export class PrivateUserDto {
   status?: StatusMessageDto;
 
   @ApiPropertyOptional({
-    description: 'List of chat IDs associated with the user',
+    description: 'List of chat IDs associated with the user.',
     type: [String],
   })
   chats?: string[];

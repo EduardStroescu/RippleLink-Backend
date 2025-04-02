@@ -3,7 +3,7 @@ import { IsOptional, IsString } from 'class-validator';
 
 export class CreateSettingsDto {
   @ApiPropertyOptional({
-    description: 'Chat background image as base64 encoded string',
+    description: 'Chat background image as a base64 encoded string.',
     type: String,
   })
   @IsOptional()
@@ -11,7 +11,7 @@ export class CreateSettingsDto {
   backgroundImage?: string;
 
   @ApiPropertyOptional({
-    description: 'Chat glow color in RGBA format',
+    description: 'Chat glow color in RGBA format.',
     type: String,
     example: 'rgba(0,255,227,1)',
   })
@@ -20,7 +20,7 @@ export class CreateSettingsDto {
   glowColor?: string;
 
   @ApiPropertyOptional({
-    description: 'Chat tint color in RGBA format',
+    description: 'Chat tint color in RGBA format.',
     type: String,
     example: 'rgba(0,255,227,1)',
   })

@@ -12,6 +12,7 @@ import { UsersService } from './users.service';
 import UpdateUserDto from './dto/UpdateUser.dto';
 import { JwtGuard } from 'src/auth/guards';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiInternalServerErrorResponse,
@@ -42,6 +43,9 @@ export class UsersController {
     status: 401,
     description: 'Invalid JWT bearer access token',
   })
+  @ApiInternalServerErrorResponse({
+    description: 'An unexpected error occurred. Please try again later!',
+  })
   @UseGuards(JwtGuard)
   @Get(':id')
   async getUser(@Param('id') id: string) {
@@ -56,6 +60,9 @@ export class UsersController {
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid JWT bearer access token',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'An unexpected error occurred. Please try again later!',
   })
   @UseGuards(JwtGuard)
   @Get('search/:displayName')
@@ -72,10 +79,10 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOkResponse({ status: 200, type: PrivateUserDto })
   @ApiBadRequestResponse({
-    description: 'Email already exists',
+    description: 'Email address already in use',
   })
   @ApiInternalServerErrorResponse({
-    description: "Couldn't update user",
+    description: 'An unexpected error occurred. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -104,7 +111,12 @@ export class UsersController {
       },
     },
   })
-  @ApiInternalServerErrorResponse({ description: 'Could not update avatar' })
+  @ApiInternalServerErrorResponse({
+    description: 'Could not update avatar. Please try again later!',
+  })
+  @ApiBadGatewayResponse({
+    description: 'Cloudinary Error',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid JWT bearer access token',
@@ -131,12 +143,15 @@ export class UsersController {
       },
     },
   })
+  @ApiBadRequestResponse({
+    description: 'New password and its confirmation do not match',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid JWT bearer access token or password',
   })
   @ApiInternalServerErrorResponse({
-    description: "Couldn't change password",
+    description: 'An unexpected error occurred. Please try again later!',
   })
   @UseGuards(JwtGuard)
   @Patch('update-password')
@@ -160,6 +175,9 @@ export class UsersController {
         },
       },
     },
+  })
+  @ApiBadRequestResponse({
+    description: 'Passwords do not match',
   })
   @ApiInternalServerErrorResponse({
     description: 'An error occurred while deleting the user',

@@ -7,26 +7,12 @@ import {
   SwaggerDocumentOptions,
   SwaggerModule,
 } from '@nestjs/swagger';
-import { IoAdapter } from '@nestjs/platform-socket.io';
-import { ServerOptions } from 'socket.io';
 import { json } from 'express';
 
-const SOCKET_TRANSFER_LIMIT = 10 * 1e6; // Web Socket max transfer size 10MB
 const JSON_LIMIT = '10mb'; // Parser - JSON - max transfer size 10MB
-
-class CustomIoAdapter extends IoAdapter {
-  createIOServer(port: number, options?: ServerOptions): any {
-    const server = super.createIOServer(port, {
-      ...options,
-      maxHttpBufferSize: SOCKET_TRANSFER_LIMIT, // max transfer size 10MB
-    });
-    return server;
-  }
-}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.useWebSocketAdapter(new CustomIoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['/'] });
   const PORT = process.env.PORT ?? 3000;
 
@@ -72,10 +58,8 @@ async function bootstrap() {
     ],
   });
 
-  await app.listen(
-    PORT,
-    '0.0.0.0',
-    () => console.log`"Running on PORT ${PORT}`,
+  await app.listen(PORT, '0.0.0.0', () =>
+    console.log(`Running on http://localhost:${PORT}`),
   );
 }
 bootstrap();

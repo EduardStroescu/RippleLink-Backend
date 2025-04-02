@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   Injectable,
@@ -10,12 +11,12 @@ import { CreateUserDto, LoginUserDto } from './dto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'schemas/User.schema';
 import { Model, Types } from 'mongoose';
 import { stripUserOfSensitiveData } from 'src/lib/utils';
 import { StatusService } from 'src/status/status.service';
+import { FileUploaderService } from 'src/fileUploader/fileUploader.provider';
 
 @Injectable()
 export class AuthService {
@@ -24,11 +25,15 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly statusService: StatusService,
-    private readonly cloudinaryService: CloudinaryService,
+    private readonly fileUploaderService: FileUploaderService,
   ) {}
 
   async register(createUserDto: CreateUserDto) {
     try {
+      if (createUserDto.confirmPassword !== createUserDto.password)
+        throw new BadRequestException(
+          'Password and its confirmation do not match',
+        );
       // Hash the password
       const password = await bcrypt.hash(createUserDto.password, 10);
 
@@ -41,17 +46,19 @@ export class AuthService {
           createUserDto.firstName + createUserDto.lastName,
         password,
       });
+      newUser = await newUser.save();
 
       if (createUserDto.avatarUrl) {
-        const userAvatar = await this.cloudinaryService.uploadAvatar(
-          createUserDto.avatarUrl,
-          createUserDto.email,
+        const userAvatar = await this.fileUploaderService.uploadBase64File(
+          'avatar',
+          newUser._id.toString(),
+          {
+            base64String: createUserDto.avatarUrl,
+          },
         );
 
-        newUser.avatarUrl = userAvatar.secure_url;
+        newUser.avatarUrl = userAvatar;
       }
-
-      newUser = await newUser.save();
       const status = await this.statusService.createStatus(newUser._id);
 
       const tokens = await this.signTokens(newUser._id, newUser.email);
@@ -65,10 +72,11 @@ export class AuthService {
       const strippedUser = stripUserOfSensitiveData(newUser);
       return { ...strippedUser, ...tokens };
     } catch (error) {
-      if (error.code === 'P2002') {
+      if (error.code === 11000) {
         // Unique constraint failed
-        throw new ConflictException('User already exists');
+        throw new ConflictException('Email already in use');
       } else {
+        if (error instanceof HttpException) throw error;
         throw new InternalServerErrorException(
           'An error occurred while registering new user',
         );
@@ -78,13 +86,22 @@ export class AuthService {
 
   async login(loginUserDto: LoginUserDto) {
     try {
-      let user = await this.userModel
-        .findOne({
-          email: loginUserDto.email,
-        })
-        .exec();
+      const user = (
+        await this.userModel
+          .findOne({
+            email: loginUserDto.email,
+          })
+          .populate([
+            'settings',
+            {
+              path: 'status',
+              select: 'statusMessage',
+            },
+          ])
+          .exec()
+      )?.toObject();
 
-      if (!user) throw new NotFoundException('User not found');
+      if (!user) throw new NotFoundException('No user exists with this email');
 
       const isPasswordValid = await bcrypt.compare(
         loginUserDto.password,
@@ -94,22 +111,10 @@ export class AuthService {
       if (!isPasswordValid)
         throw new UnauthorizedException('Invalid credentials');
 
-      const tokens = await this.signTokens(
-        user._id as Types.ObjectId,
-        user.email,
-      );
-      await this.updateRefreshToken(
-        user._id as Types.ObjectId,
-        tokens.refresh_token,
-      );
+      const tokens = await this.signTokens(user._id, user.email);
+      await this.updateRefreshToken(user._id, tokens.refresh_token);
 
-      user = await user.populate('settings');
-      user = await user.populate({
-        path: 'status',
-        select: 'statusMessage',
-      });
-
-      const strippedUser = stripUserOfSensitiveData(user.toObject());
+      const strippedUser = stripUserOfSensitiveData(user);
       return {
         ...strippedUser,
         ...tokens,
@@ -124,17 +129,21 @@ export class AuthService {
 
   async refreshToken(refreshToken: string) {
     try {
-      const user = await this.userModel
-        .findOne({
-          refresh_token: refreshToken,
-        })
-        .select('-password -isDeleted')
-        .populate({ path: 'settings' })
-        .populate({ path: 'status', select: 'statusMessage' });
+      const user = (
+        await this.userModel
+          .findOne({
+            refresh_token: refreshToken,
+          })
+          .select('-password -isDeleted')
+          .populate([
+            { path: 'settings' },
+            { path: 'status', select: 'statusMessage' },
+          ])
+      )?.toObject();
 
       if (!user || user.refresh_token !== refreshToken)
         throw new UnauthorizedException(
-          'Invalid refresh token, please log in again',
+          'Invalid refresh token, please log in again!',
         );
 
       const payload = this.jwtService.verify(refreshToken, {
@@ -145,17 +154,17 @@ export class AuthService {
         payload.sub,
         payload.email,
       );
-      await this.updateRefreshToken(user._id as Types.ObjectId, refresh_token);
+      await this.updateRefreshToken(user._id, refresh_token);
 
       return {
-        ...user.toObject(),
+        ...user,
         access_token,
         refresh_token,
       };
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new UnauthorizedException(
-        'Invalid refresh token, please log in again',
+        'Invalid refresh token, please log in again!',
       );
     }
   }
@@ -195,12 +204,8 @@ export class AuthService {
     userId: Types.ObjectId,
     refreshToken: string,
   ) {
-    try {
-      await this.userModel.findByIdAndUpdate(userId, {
-        refresh_token: refreshToken,
-      });
-    } catch (error) {
-      // Ignore error
-    }
+    await this.userModel.findByIdAndUpdate(userId, {
+      refresh_token: refreshToken,
+    });
   }
 }

@@ -7,6 +7,7 @@ import { User, UserSchema } from 'schemas/User.schema';
 import { Message, MessageSchema } from 'schemas/Message.schema';
 import { GatewayModule } from 'src/gateway/gateway.module';
 import { MessagesModule } from 'src/messages/messages.module';
+import { FileUploaderModule } from 'src/fileUploader/fileUploader.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { MessagesModule } from 'src/messages/messages.module';
     ]),
     MessagesModule,
     GatewayModule,
+    FileUploaderModule,
   ],
   controllers: [ChatsController],
   providers: [ChatsService],

@@ -40,7 +40,7 @@ export class AppController {
       // Read and send the file
       fs.createReadStream(filePath).pipe(res);
     } catch (error) {
-      throw new Error('Internal Server Error');
+      res.status(500).send('Internal Server Error');
     }
   }
 }

@@ -20,7 +20,7 @@ import mongoose, { Document, Types } from 'mongoose';
 export class User extends Document {
   _id: Types.ObjectId;
 
-  @Prop({ type: String, unique: true, required: true })
+  @Prop({ type: String, unique: true, required: true, index: true })
   email: string;
 
   @Prop({ type: String, required: false })
@@ -32,7 +32,7 @@ export class User extends Document {
   @Prop({ type: String, required: true })
   lastName: string;
 
-  @Prop({ type: String, required: false })
+  @Prop({ type: String, required: false, index: true })
   displayName?: string;
 
   @Prop({ type: String, required: false })

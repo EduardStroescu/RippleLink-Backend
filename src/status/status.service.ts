@@ -24,8 +24,11 @@ export class StatusService {
 
   async getUserStatus(userId: string) {
     try {
-      const status = await this.statusModel.findOne({ userId }).exec();
+      const status = (
+        await this.statusModel.findOne({ userId }).exec()
+      )?.toObject();
       if (!status) throw new NotFoundException('User status not found');
+
       const isUserOnline = await this.redisService.isUserOnline(userId);
       if (isUserOnline) {
         status.online = true;
@@ -33,10 +36,12 @@ export class StatusService {
         status.online = false;
       }
 
-      return status.toObject();
+      return status;
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException('Unable to get user status');
+      throw new InternalServerErrorException(
+        'Unable to get user status. Please try again later!',
+      );
     }
   }
 
@@ -48,7 +53,9 @@ export class StatusService {
       });
       return await updatedStatus.save();
     } catch (err) {
-      throw new InternalServerErrorException('Unable to create status');
+      throw new InternalServerErrorException(
+        'Unable to create status. Please try again later!',
+      );
     }
   }
 
@@ -71,19 +78,21 @@ export class StatusService {
           userId: user._id,
           ...updateStatusDto,
         });
-        newStatus = await newStatus.save();
+        newStatus = (await newStatus.save())?.toObject();
       }
       user.status = newStatus._id;
       await user.save();
-      return newStatus.toObject();
+      return newStatus;
     } catch (err) {
-      throw new InternalServerErrorException('Unable to update status');
+      throw new InternalServerErrorException(
+        'Unable to update status. Please try again later!',
+      );
     }
   }
 
   async disconnectUser(userId: Types.ObjectId) {
     try {
-      const user = await this.userModel.findById(userId).populate('status');
+      const user = await this.userModel.findById(userId);
 
       if (!user) {
         throw new Error('User not found');

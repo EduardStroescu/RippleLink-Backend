@@ -10,6 +10,8 @@ import {
 import { AuthService } from './auth.service';
 import { CreateUserDto, LoginUserDto, RefreshTokenDto } from './dto';
 import {
+  ApiBadGatewayResponse,
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -34,10 +36,16 @@ export class AuthController {
     description: 'User Created',
     type: PrivateUserDto,
   })
+  @ApiBadRequestResponse({
+    description: 'Password and its confirmation do not match',
+  })
+  @ApiConflictResponse({ description: 'Email already in use', status: 409 })
   @ApiInternalServerErrorResponse({
     description: 'An error occurred while registering new user',
   })
-  @ApiConflictResponse({ description: 'User already Exists', status: 401 })
+  @ApiBadGatewayResponse({
+    description: 'Cloudinary Error',
+  })
   @HttpCode(HttpStatus.CREATED)
   @Post('register')
   async register(@Body() createUserDto: CreateUserDto) {
@@ -50,8 +58,7 @@ export class AuthController {
     type: PrivateUserDto,
   })
   @ApiNotFoundResponse({
-    description: 'User not found',
-    status: 404,
+    description: 'No user exists with this email',
   })
   @ApiInternalServerErrorResponse({
     description: 'An error occurred while logging the user in',
@@ -72,7 +79,7 @@ export class AuthController {
     type: PrivateUserDto,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid refresh token, please log in again',
+    description: 'Invalid refresh token, please log in again!',
     status: 401,
   })
   @HttpCode(HttpStatus.OK)

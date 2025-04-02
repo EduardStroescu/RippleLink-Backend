@@ -6,7 +6,6 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiInternalServerErrorResponse,
-  ApiNotFoundResponse,
   ApiOkResponse,
   ApiQuery,
   ApiTags,
@@ -41,33 +40,47 @@ export class MessagesController {
   })
   @ApiOkResponse({
     status: 200,
-    description: 'All messages retrieved successfully',
-    type: [MessageDto],
+    description:
+      'All messages retrieved successfully. An empty array is returned if no messages are found.',
+    type: MessageDto,
+    isArray: true,
   })
   @ApiBadRequestResponse({
     description: 'Invalid chat id',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Could not retrieve messages',
+    description: 'An unexpected error occurred. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description:
+      'Invalid JWT bearer access token or the user is not a member of the chat.',
     status: 401,
   })
   @UseGuards(JwtGuard)
   @Get(':chatId')
   async getAllMessages(
+    @GetUser('_id') userId: Types.ObjectId,
     @Param('chatId') chatId: Types.ObjectId,
     @Query('cursor') cursor?: string,
     @Query('limit') limit = 20,
   ) {
     if (cursor) {
-      return await this.messagesService.getAllMessages(chatId, cursor, limit);
+      return await this.messagesService.getAllMessages(
+        userId,
+        chatId,
+        cursor,
+        limit,
+      );
     } else {
       return await this.redisService.getOrSetCache(
         `messages?chatId=${chatId}`,
         async () =>
-          await this.messagesService.getAllMessages(chatId, cursor, limit),
+          await this.messagesService.getAllMessages(
+            userId,
+            chatId,
+            cursor,
+            limit,
+          ),
       );
     }
   }

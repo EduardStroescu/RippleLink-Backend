@@ -1,8 +1,9 @@
 import {
-  BadRequestException,
   HttpException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -12,6 +13,7 @@ import { User } from 'schemas/User.schema';
 import { Message } from 'schemas/Message.schema';
 import { MessagesService } from 'src/messages/messages.service';
 import { UpdateChatDto } from './dto/UpdateChat.dto';
+import { FileUploaderService } from 'src/fileUploader/fileUploader.provider';
 
 @Injectable()
 export class ChatsService {
@@ -20,26 +22,43 @@ export class ChatsService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Message.name) private messageModel: Model<Message>,
     private readonly messageService: MessagesService,
+    private readonly fileUploaderService: FileUploaderService,
   ) {}
 
   async getAllChats(user: User): Promise<Chat[]> {
     try {
       const chats = await this.chatModel
         .find({ _id: { $in: user.chats } })
-        .populate({
-          path: 'users',
-          select: 'displayName avatarUrl',
-        })
-        .populate({
-          path: 'lastMessage',
-          populate: { path: 'senderId', select: 'displayName' },
-        })
+        .populate([
+          {
+            path: 'users',
+            select: 'displayName avatarUrl',
+          },
+          {
+            path: 'lastMessage',
+            populate: [
+              {
+                path: 'senderId',
+                select: 'displayName',
+                transform: (doc, id) =>
+                  doc || { _id: id, displayName: 'Server Event' },
+              },
+              {
+                path: 'readBy.userId',
+                model: 'User',
+                select: '_id displayName avatarUrl',
+              },
+            ],
+          },
+        ])
         .sort({ updatedAt: -1 })
         .exec();
 
       return chats;
     } catch (error) {
-      throw new InternalServerErrorException("Couldn't retrieve chats");
+      throw new InternalServerErrorException(
+        "Couldn't retrieve chats. Please try again later!",
+      );
     }
   }
 
@@ -54,9 +73,8 @@ export class ChatsService {
         .exec();
 
       // Check if all user IDs provided exist
-      if (usersInChat.length !== createChatDto.userIds.length + 1) {
-        throw new BadRequestException('One or more users not found');
-      }
+      if (usersInChat.length !== createChatDto.userIds.length + 1)
+        throw new NotFoundException('One or more users not found');
 
       let chat = await this.chatModel.findOne({
         users: { $all: [userId, ...createChatDto.userIds] },
@@ -80,8 +98,8 @@ export class ChatsService {
       const { newMessage } = await this.messageService.createMessage(
         chat._id,
         userId,
-        createChatDto.lastMessage,
-        createChatDto.messageType,
+        createChatDto.lastMessage.content,
+        createChatDto.lastMessage.type,
       );
 
       // Update the chat with the last message ID
@@ -91,82 +109,124 @@ export class ChatsService {
       // Update users with the new chat
       await this.userModel.updateMany(
         { _id: { $in: [userId, ...createChatDto.userIds] } },
-        { $push: { chats: chat._id } },
-        { new: true },
+        { $addToSet: { chats: chat._id } },
       );
 
       // Populate the newly created chat with relevant data
-      let finalChat = await chat.populate({
-        path: 'users',
-        select: 'displayName avatarUrl',
-      });
-      finalChat = await finalChat.populate({
-        path: 'lastMessage',
-        populate: { path: 'senderId', select: 'displayName' },
-      });
+      const finalChat = (
+        await chat.populate([
+          {
+            path: 'users',
+            select: 'displayName avatarUrl',
+          },
+          {
+            path: 'lastMessage',
+            populate: [
+              {
+                path: 'senderId',
+                select: 'displayName',
+                transform: (doc, id) =>
+                  doc || { _id: id, displayName: 'Server Event' },
+              },
+              {
+                path: 'readBy.userId',
+                model: 'User',
+                select: '_id displayName avatarUrl',
+              },
+            ],
+          },
+        ])
+      )?.toObject();
 
-      return { newChat: finalChat.toObject(), wasExistingChat };
+      return { newChat: finalChat, wasExistingChat };
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException('Unable to create chat');
+      throw new InternalServerErrorException(
+        'Unable to create chat. Please try again later!',
+      );
     }
   }
 
-  async getSharedFiles(chatId: string) {
+  async getSharedFiles(userId: Types.ObjectId, chatId: string) {
     try {
+      const chat = await this.chatModel.findById(chatId).exec();
+      if (!chat) throw new NotFoundException('Chat not found');
+
+      const isUserInChat = chat.users.some((user) => user.equals(userId));
+      if (!isUserInChat)
+        throw new UnauthorizedException("You're not a member of this chat.");
+
       return await this.messageModel
-        .find({ chatId: chatId, type: { $ne: 'text' } })
+        .find({ chatId: chatId, type: 'file' })
+        .populate({ path: 'senderId', select: '_id displayName' })
         .sort({ createdAt: -1 });
     } catch (err) {
-      throw new InternalServerErrorException('Unable to retrieve shared files');
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException(
+        'Unable to retrieve shared files. Please try again later!',
+      );
     }
   }
 
   async updateChat(chatId: string, updateChatDto: UpdateChatDto) {
     try {
-      let updatedChat = await this.chatModel
-        .findByIdAndUpdate(chatId, updateChatDto, { new: true })
-        .exec();
-      if (!updatedChat) {
-        throw new BadRequestException('Chat not found');
-      }
+      const updatedChat = (
+        await this.chatModel
+          .findByIdAndUpdate(chatId, updateChatDto, { new: true })
+          .populate([
+            {
+              path: 'users',
+              select: 'displayName avatarUrl',
+            },
+            {
+              path: 'lastMessage',
+              populate: [
+                {
+                  path: 'senderId',
+                  select: 'displayName',
+                  transform: (doc, id) =>
+                    doc || { _id: id, displayName: 'Server Event' },
+                },
+                {
+                  path: 'readBy.userId',
+                  model: 'User',
+                  select: '_id displayName avatarUrl',
+                },
+              ],
+            },
+          ])
+          .exec()
+      )?.toObject();
 
-      updatedChat = await updatedChat.populate({
-        path: 'users',
-        select: 'displayName avatarUrl',
-      });
-      updatedChat = await updatedChat.populate({
-        path: 'lastMessage',
-        populate: { path: 'senderId', select: 'displayName' },
-      });
-      return updatedChat.toObject();
+      if (!updatedChat) throw new NotFoundException('Chat not found');
+
+      return updatedChat;
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException('Unable to update chat');
+      throw new InternalServerErrorException(
+        'Unable to update chat. Please try again later!',
+      );
     }
   }
 
   async deleteChat(user: User, chatId: Types.ObjectId): Promise<Chat> {
-    if (!chatId) {
-      throw new BadRequestException('Chat not found');
-    }
-
     try {
-      const userInChat = user.chats.some((chat) => chat._id.equals(chatId));
+      const userInChat = user.chats.some((chat) => chat.equals(chatId));
 
       if (!userInChat) {
-        throw new BadRequestException('You are not a member of this chat');
+        throw new UnauthorizedException('You are not a member of this chat');
       }
 
-      await this.userModel.findByIdAndUpdate(
-        user._id,
-        { $pull: { chats: chatId } },
-        { new: true },
-      );
+      const updatedChat = (
+        await this.chatModel.findById(chatId).exec()
+      )?.toObject();
 
-      let updatedChat = await this.chatModel.findById(chatId).exec();
+      if (!updatedChat) throw new NotFoundException('Chat not found');
 
-      updatedChat = updatedChat.toObject();
+      await this.userModel.findByIdAndUpdate(user._id, {
+        $pull: { chats: chatId },
+      });
+
       const otherChatUsers = updatedChat.users.filter(
         (person) => person._id.toString() !== user._id.toString(),
       );
@@ -178,17 +238,40 @@ export class ChatsService {
       }
       const checkIfOtherUsersAreInChat =
         persons &&
-        persons?.some((person) => {
-          return person.chats.some((chat) => chat._id.equals(chatId));
-        });
+        persons?.some((person) =>
+          person.chats.some((chat) => chat.equals(chatId)),
+        );
       if (persons.length && !checkIfOtherUsersAreInChat) {
-        await this.chatModel.findByIdAndDelete(chatId);
-        await this.messageModel.deleteMany({ chatId: updatedChat._id });
+        await this.deleteAllContentForChat(chatId, updatedChat);
       }
+
       return updatedChat;
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException('Unable to delete chat');
+      throw new InternalServerErrorException(
+        'Unable to delete chat. Please try again later!',
+      );
     }
+  }
+
+  private async deleteAllContentForChat(
+    chatId: Types.ObjectId,
+    updatedChat: Chat,
+  ) {
+    await this.chatModel.findByIdAndDelete(chatId);
+    const fileMessages = await this.messageModel
+      .find({ chatId: updatedChat._id, type: 'file' })
+      .exec();
+    const fileMessagesIds = fileMessages.flatMap((message) => {
+      if (Array.isArray(message.content)) {
+        return message.content.map(
+          (file) =>
+            `${message.senderId}-files/${file.content.split('/').pop()}`,
+        );
+      }
+    });
+    if (fileMessagesIds.length > 0)
+      this.fileUploaderService.removeFiles(fileMessagesIds);
+    await this.messageModel.deleteMany({ chatId: updatedChat._id });
   }
 }

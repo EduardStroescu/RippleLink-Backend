@@ -20,11 +20,13 @@ export class CallsController {
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    description: 'Retrieved all calls successfully',
-    type: [CallDto],
+    description:
+      'Retrieved all calls successfully. An empty array is returned if no calls are found.',
+    type: CallDto,
+    isArray: true,
   })
   @ApiInternalServerErrorResponse({
-    description: "Couldn't to retrieve calls",
+    description: 'Unable to get calls. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',

@@ -1,5 +1,6 @@
 import { Body, Controller, Patch, UseGuards } from '@nestjs/common';
 import {
+  ApiBadGatewayResponse,
   ApiBearerAuth,
   ApiInternalServerErrorResponse,
   ApiOkResponse,
@@ -22,7 +23,10 @@ export class SettingsController {
     type: UpdateSettingsDto,
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to update settings',
+    description: 'Unable to update settings. Please try again later!',
+  })
+  @ApiBadGatewayResponse({
+    description: 'Cloudinary Error',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',

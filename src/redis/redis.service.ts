@@ -104,10 +104,12 @@ export class RedisService {
 
       if (cacheData) {
         let parsedData: T[] = JSON.parse(cacheData);
-
-        // Ensure parsedData is an array
         if (!Array.isArray(parsedData)) {
-          parsedData = [];
+          if (Array.isArray(parsedData?.[key.split('?')[0]])) {
+            parsedData = parsedData[key.split('?')[0]];
+          } else {
+            parsedData = [];
+          }
         }
 
         // Replace the updated data in the cache
@@ -118,6 +120,13 @@ export class RedisService {
           parsedData.splice(index, 1, updatedData);
         } else if (index === -1 && addNew) {
           parsedData.push(updatedData);
+        }
+
+        if (!Array.isArray(JSON.parse(cacheData))) {
+          parsedData = {
+            ...JSON.parse(cacheData),
+            [key.split('?')[0]]: parsedData,
+          };
         }
 
         // Update the cache with the modified array
@@ -150,7 +159,11 @@ export class RedisService {
       if (cacheData) {
         let parsedData: T[] = JSON.parse(cacheData);
         if (!Array.isArray(parsedData)) {
-          return;
+          if (Array.isArray(parsedData?.[key.split('?')[0]])) {
+            parsedData = parsedData[key.split('?')[0]];
+          } else {
+            return;
+          }
         }
 
         parsedData = parsedData.map((item) => {
@@ -184,9 +197,15 @@ export class RedisService {
               }
             }
           }
-
           return shouldUpdate ? { ...item, [target]: value } : item;
         });
+
+        if (!Array.isArray(JSON.parse(cacheData))) {
+          parsedData = {
+            ...JSON.parse(cacheData),
+            [key.split('?')[0]]: parsedData,
+          };
+        }
 
         await this.redis.setex(
           key,
@@ -301,83 +320,61 @@ export class RedisService {
     }
   }
 
-  async checkConnection(): Promise<string> {
-    try {
-      const result = await this.redis.ping();
-      return result;
-    } catch (error) {
-      throw new InternalServerErrorException(
-        `Redis is not running. Please try again later!`,
-      );
-    }
-  }
-
-  async resetCache(resetRedisCacheDto: ResetRedisCacheDto): Promise<void> {
-    try {
-      const adminId = this.configService.get('ADMIN_ID');
-      const adminPassword = this.configService.get('ADMIN_PASSWORD');
-
-      if (
-        adminId !== resetRedisCacheDto.adminId ||
-        adminPassword !== resetRedisCacheDto.adminPassword
-      ) {
-        throw new InternalServerErrorException('Invalid admin credentials.');
-      }
-
-      await this.redis.flushall();
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      throw new InternalServerErrorException(
-        `An unexpected error occured. Please try again later!`,
-      );
-    }
-  }
-
+  /**
+   * Populates the call object with the SDP and ICE candidates for each participant
+   */
   async formatCallForUser(call: CallDto): Promise<CallDto> {
-    const participants: CallDto['participants'] = await Promise.all(
-      call.participants.map(
-        async (participant: CallDto['participants'][number]) => {
-          return {
-            ...participant,
-            offers: await Promise.all(
-              participant.offers.map(async (offer) => ({
-                ...offer,
-                sdp: await this.getSDP(
-                  participant.userId._id.toString(),
-                  offer.to,
-                  'offer',
-                ),
-                iceCandidates: await this.getIce({
-                  from: participant.userId._id.toString(),
-                  to: offer.to,
-                  type: 'offer',
-                }),
-              })),
-            ),
-            answers: await Promise.all(
-              participant.answers.map(async (answer) => ({
-                ...answer,
-                sdp: await this.getSDP(
-                  participant.userId._id.toString(),
-                  answer.to,
-                  'answer',
-                ),
-                iceCandidates: await this.getIce({
-                  from: participant.userId._id.toString(),
-                  to: answer.to,
-                  type: 'answer',
-                }),
-              })),
-            ),
-          };
-        },
-      ),
-    );
-    call.participants = participants;
+    const participants = await Promise.all(
+      call.participants.map(async (participant) => {
+        const offers = await Promise.all(
+          participant.offers.map(async (offer) => {
+            const [sdp, iceCandidates] = await Promise.all([
+              this.getSDP(participant.userId._id.toString(), offer.to, 'offer'),
+              this.getIce({
+                from: participant.userId._id.toString(),
+                to: offer.to,
+                type: 'offer',
+              }),
+            ]);
+            return { ...offer, sdp, iceCandidates };
+          }),
+        );
 
-    return call;
+        const answers = await Promise.all(
+          participant.answers.map(async (answer) => {
+            const [sdp, iceCandidates] = await Promise.all([
+              this.getSDP(
+                participant.userId._id.toString(),
+                answer.to,
+                'answer',
+              ),
+              this.getIce({
+                from: participant.userId._id.toString(),
+                to: answer.to,
+                type: 'answer',
+              }),
+            ]);
+            return { ...answer, sdp, iceCandidates };
+          }),
+        );
+
+        return {
+          ...participant,
+          offers,
+          answers,
+        };
+      }),
+    );
+
+    return {
+      ...call,
+      participants,
+    };
   }
 
+  /**
+   * Retrieves the call object from Redis and formats it for the user
+   */
   async getFormattedCall(chatId: string) {
     try {
       const call = await this.redis.hgetall(`call:${chatId}`);
@@ -391,6 +388,9 @@ export class RedisService {
     }
   }
 
+  /**
+   * Retrieves the call object from Redis and returns it as is
+   */
   async getUnformattedCall(chatId: string): Promise<CallDto> {
     try {
       const call = await this.redis.hgetall(`call:${chatId}`);
@@ -483,12 +483,108 @@ export class RedisService {
     }
   }
 
+  async deleteOtherParticipantsIceAndSDPForParticipant(
+    otherParticipants: CallDto['participants'],
+    toUser: CallDto['participants'][number],
+  ) {
+    try {
+      const delKeys: string[] = [];
+
+      otherParticipants.forEach((participant) => {
+        delKeys.push(
+          `ice:${participant.userId._id}:${toUser.userId._id}:offer`,
+        );
+        delKeys.push(
+          `sdp:${participant.userId._id}:${toUser.userId._id}:offer`,
+        );
+        delKeys.push(
+          `ice:${participant.userId._id}:${toUser.userId._id}:answer`,
+        );
+        delKeys.push(
+          `sdp:${participant.userId._id}:${toUser.userId._id}:answer`,
+        );
+      });
+
+      if (delKeys.length > 0) {
+        await this.redis.del(delKeys);
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
   async deleteIceAndSDPForParticipant(
     participant: CallDto['participants'][number],
   ) {
     try {
-      const delKeys = [];
+      const delKeys = await this.generateDeleteKeys([participant]);
 
+      if (delKeys.length > 0) {
+        await this.redis.del(delKeys);
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occurred. Please try again later!`,
+      );
+    }
+  }
+
+  async deleteAllIceAndSDPForCall(participants: CallDto['participants']) {
+    try {
+      const delKeys = await this.generateDeleteKeys(participants);
+
+      if (delKeys.length > 0) {
+        await this.redis.del(delKeys);
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `An unexpected error occurred. Please try again later!`,
+      );
+    }
+  }
+
+  async checkConnection(): Promise<string> {
+    try {
+      const result = await this.redis.ping();
+      return result;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Redis is not running. Please try again later!`,
+      );
+    }
+  }
+
+  async resetCache(resetRedisCacheDto: ResetRedisCacheDto): Promise<void> {
+    try {
+      const adminId = this.configService.get('ADMIN_ID');
+      const adminPassword = this.configService.get('ADMIN_PASSWORD');
+
+      if (
+        adminId !== resetRedisCacheDto.adminId ||
+        adminPassword !== resetRedisCacheDto.adminPassword
+      ) {
+        throw new InternalServerErrorException('Invalid admin credentials.');
+      }
+
+      await this.redis.flushall();
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException(
+        `An unexpected error occured. Please try again later!`,
+      );
+    }
+  }
+
+  /**
+   * Helper function to generate an array of Redis keys to delete for a given participant.
+   * Includes the ICE candidates and SDP for each offer and answer
+   */
+  private async generateDeleteKeys(participants: CallDto['participants']) {
+    const delKeys: string[] = [];
+
+    participants.forEach((participant) => {
       participant.offers.forEach((offer) => {
         delKeys.push(`ice:${participant.userId._id}:${offer.to}:offer`);
         delKeys.push(`sdp:${participant.userId._id}:${offer.to}:offer`);
@@ -497,36 +593,7 @@ export class RedisService {
         delKeys.push(`ice:${participant.userId._id}:${answer.to}:answer`);
         delKeys.push(`sdp:${participant.userId._id}:${answer.to}:answer`);
       });
-      await this.redis.del([...delKeys]);
-    } catch (error) {
-      throw new InternalServerErrorException(
-        `An unexpected error occured. Please try again later!`,
-      );
-    }
-  }
-
-  async deleteAllIceAndSDPForCall(participants: CallDto['participants']) {
-    try {
-      const delKeys: string[] = [];
-
-      participants.forEach((participant) => {
-        participant.offers.forEach((offer) => {
-          delKeys.push(`ice:${participant.userId._id}:${offer.to}:offer`);
-          delKeys.push(`sdp:${participant.userId._id}:${offer.to}:offer`);
-        });
-        participant.answers.forEach((answer) => {
-          delKeys.push(`ice:${participant.userId._id}:${answer.to}:answer`);
-          delKeys.push(`sdp:${participant.userId._id}:${answer.to}:answer`);
-        });
-      });
-
-      if (delKeys.length > 0) {
-        await this.redis.del(...delKeys);
-      }
-    } catch (error) {
-      throw new InternalServerErrorException(
-        `An unexpected error occured. Please try again later!`,
-      );
-    }
+    });
+    return delKeys;
   }
 }

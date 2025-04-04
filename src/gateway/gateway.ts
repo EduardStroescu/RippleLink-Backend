@@ -160,7 +160,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
           content,
         );
 
-      const response = await this.redisService.invalidateCacheKey(
+      const response = await this.redisService.updateInCache(
         `messages?chatId=${chatId}`,
         async () => updatedMessage,
       );
@@ -220,13 +220,14 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         new Types.ObjectId(_id as string),
         new Types.ObjectId(chatId),
       );
-      // TODO: FINISH THIS
-      await this.redisService.updateInCacheByFilter<Message>(
-        `messages?chatId=${chatId}`,
-        { senderId: { $ne: _id } },
-        'readBy',
-        updatedChat.lastMessage.readBy,
-      );
+      if (updatedChat.lastMessage.senderId._id.toString() !== _id) {
+        await this.redisService.updateInCacheByFilter<Message>(
+          `messages?chatId=${chatId}`,
+          { senderId: { $ne: _id } },
+          'readBy',
+          updatedChat.lastMessage.readBy,
+        );
+      }
       this.updateChat(updatedChat, 'update');
       this.server.to(chatId).emit('messagesRead', {
         content: updatedChat,
@@ -359,10 +360,9 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       const updatedCall = await this.callService.endCall(_id as string, chatId);
-      if (updatedCall.status !== 'ended') {
-        await this.updateCalls(updatedCall);
-      } else {
-        await this.deleteCalls({ ...updatedCall });
+      await this.updateCalls(updatedCall);
+
+      if (updatedCall.status === 'ended') {
         await this.createMessage(client, {
           chatId,
           content: `Call Ended ${getCallDuration(updatedCall.createdAt)}`,
@@ -465,32 +465,32 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       onlineUserSet.has(userId),
     );
 
-    await this.redisService.invalidateCacheKey(
-      `messages?chatId=${chat._id}`,
-      async () => chat.lastMessage,
-    );
+    if (existingChat) {
+      await this.redisService.invalidateCacheKey(
+        `messages?chatId=${chat._id}`,
+        async () => chat.lastMessage,
+      );
+    }
 
-    newChatUsers.forEach((userId) => {
-      if (!existingChat) {
-        this.redisService.addToCache(
-          `chats?userId=${userId}`,
-          async () => chat,
-        );
-      } else {
+    await Promise.all(
+      newChatUsers.map((userId) => {
         this.redisService.updateInCache(
           `chats?userId=${userId}`,
           async () => chat,
+          { addNew: true },
         );
-        this.server.to(chat._id.toString()).emit('messageCreated', {
-          content: chat.lastMessage,
-        });
-      }
-    });
+        if (existingChat && onlineUserIds.includes(userId)) {
+          this.server.to(userId).emit('messageCreated', {
+            content: chat.lastMessage,
+          });
+        }
+      }),
+    );
 
     // Broadcast the new chat to all online members of the chat
     if (!!onlineUserIds.length) {
       this.server.to(onlineUserIds).emit('chatCreated', {
-        content: { ...chat },
+        content: chat,
       });
     }
   }
@@ -506,13 +506,16 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
 
     // Update respective chat cache data for each user in the chat
-    userIds.forEach((userId) =>
-      this.redisService.updateInCache(
-        `chats?userId=${userId}`,
-        async () => updatedChat,
-        { addNew: eventType === 'create' },
+    await Promise.all(
+      userIds.map((userId) =>
+        this.redisService.updateInCache(
+          `chats?userId=${userId}`,
+          async () => updatedChat,
+          { addNew: eventType === 'create' },
+        ),
       ),
     );
+
     // Broadcast the updated chat to all online members of the chat
     if (!!onlineUserIds.length) {
       this.server.to(onlineUserIds).emit('chatUpdated', {
@@ -531,19 +534,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!!onlineUserIds.length) {
       this.server.to(onlineUserIds).emit('callsUpdated', {
         content: updatedCall,
-      });
-    }
-  }
-
-  private async deleteCalls(deletedCall: CallDto & { callEnded?: boolean }) {
-    const onlineUsers = await this.redisService.getOnlineUsers();
-    const onlineUserSet = new Set(onlineUsers);
-    const userIds = deletedCall.chatId.users.map((user) => user._id.toString());
-    const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
-    // Broadcast the updated chat to all online members of the chat
-    if (!!onlineUserIds.length) {
-      this.server.to(onlineUserIds).emit('callsUpdated', {
-        content: deletedCall,
       });
     }
   }

@@ -94,51 +94,15 @@ export class ChatsService {
         wasExistingChat = true;
       }
 
-      // Create a new message (if provided) and associate it with the chat
-      const { newMessage } = await this.messageService.createMessage(
+      // Create a new message, which will also update and return the chat
+      const { newChat } = await this.messageService.createMessage(
         chat._id,
         userId,
         createChatDto.lastMessage.content,
         createChatDto.lastMessage.type,
       );
 
-      // Update the chat with the last message ID
-      chat.lastMessage = newMessage._id;
-      await chat.save();
-
-      // Update users with the new chat
-      await this.userModel.updateMany(
-        { _id: { $in: [userId, ...createChatDto.userIds] } },
-        { $addToSet: { chats: chat._id } },
-      );
-
-      // Populate the newly created chat with relevant data
-      const finalChat = (
-        await chat.populate([
-          {
-            path: 'users',
-            select: 'displayName avatarUrl',
-          },
-          {
-            path: 'lastMessage',
-            populate: [
-              {
-                path: 'senderId',
-                select: 'displayName',
-                transform: (doc, id) =>
-                  doc || { _id: id, displayName: 'Server Event' },
-              },
-              {
-                path: 'readBy.userId',
-                model: 'User',
-                select: '_id displayName avatarUrl',
-              },
-            ],
-          },
-        ])
-      )?.toObject();
-
-      return { newChat: finalChat, wasExistingChat };
+      return { newChat, wasExistingChat };
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(
@@ -231,17 +195,15 @@ export class ChatsService {
         (person) => person._id.toString() !== user._id.toString(),
       );
       let persons: User[] | undefined;
-      if (otherChatUsers.length > 0) {
+      if (!!otherChatUsers.length) {
         persons = await Promise.all(
           otherChatUsers.map((personId) => this.userModel.findById(personId)),
         );
       }
-      const checkIfOtherUsersAreInChat =
-        persons &&
-        persons?.some((person) =>
-          person.chats.some((chat) => chat.equals(chatId)),
-        );
-      if (persons.length && !checkIfOtherUsersAreInChat) {
+      const checkIfOtherUsersAreInChat = persons.some((person) =>
+        person.chats.some((chat) => chat.equals(chatId)),
+      );
+      if (!!persons.length && !checkIfOtherUsersAreInChat) {
         await this.deleteAllContentForChat(chatId, updatedChat);
       }
 

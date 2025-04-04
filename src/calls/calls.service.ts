@@ -34,21 +34,15 @@ export class CallsService {
   }
 
   async getAllCalls(user: User): Promise<CallDto[]> {
-    try {
-      const chatIds = user.chats.map((chat) => chat.toString());
+    const chatIds = user.chats.map((chat) => chat.toString());
 
-      const results = await Promise.allSettled(
-        chatIds.map((chatId) => this.redisService.getFormattedCall(chatId)),
-      );
+    const results = await Promise.allSettled(
+      chatIds.map((chatId) => this.redisService.getFormattedCall(chatId)),
+    );
 
-      return results
-        .filter((result) => result.status === 'fulfilled' && result.value)
-        .map((result) => (result as PromiseFulfilledResult<CallDto>).value);
-    } catch (err) {
-      throw new InternalServerErrorException(
-        'Unable to get calls. Please try again later!',
-      );
-    }
+    return results
+      .filter((result) => result.status === 'fulfilled' && result.value)
+      .map((result) => (result as PromiseFulfilledResult<CallDto>).value);
   }
 
   async joinCall(_id: string, chatId: string): Promise<CallDto> {
@@ -258,15 +252,42 @@ export class CallsService {
         await this.redisService.deleteCall(chatId);
         call.status = 'ended';
       } else {
-        await this.redisService.deleteIceAndSDPForParticipant(
-          call.participants[userIndex],
-        );
-        call.participants[userIndex] = {
-          ...call.participants[userIndex],
-          offers: [],
-          answers: [],
-          status: 'rejected',
-        };
+        // If other participants are in call, delete their ice and sdp for the participant who is leaving, alo delete the leaving participants' ice and sdp for everyone still in call
+        await Promise.all([
+          this.redisService.deleteIceAndSDPForParticipant(
+            call.participants[userIndex],
+          ),
+          this.redisService.deleteOtherParticipantsIceAndSDPForParticipant(
+            updatedParticipants,
+            call.participants[userIndex],
+          ),
+        ]);
+
+        call.participants = call.participants.map((participant, index) => {
+          if (index === userIndex) {
+            return {
+              ...participant,
+              offers: [],
+              answers: [],
+              status: 'rejected',
+            };
+          } else {
+            return {
+              ...participant,
+              offers: participant.offers.filter(
+                (offer) =>
+                  offer.to !==
+                  call.participants[userIndex].userId._id.toString(),
+              ),
+              answers: participant.answers.filter(
+                (answer) =>
+                  answer.to !==
+                  call.participants[userIndex].userId._id.toString(),
+              ),
+            };
+          }
+        });
+
         await this.redisService.setCall(chatId, call);
       }
       return await this.redisService.formatCallForUser(call);

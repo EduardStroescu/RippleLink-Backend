@@ -139,9 +139,7 @@ export class MessagesService {
 
       if (!newChat) throw new NotFoundException('Chat not found');
 
-      const interlocutorIds = newChat.users
-        .filter((user) => user._id.toString() !== userId.toString())
-        .map((user) => user._id);
+      const interlocutorIds = newChat.users.map((user) => user._id);
 
       const interlocutors = await this.userModel
         .find({ _id: { $in: interlocutorIds } })
@@ -151,7 +149,7 @@ export class MessagesService {
         .map((interlocutor) => interlocutor._id);
       if (!!interlocutorsWithoutChat.length) {
         await this.userModel.updateMany(
-          { _id: { $in: [interlocutorsWithoutChat] } },
+          { _id: { $in: interlocutorsWithoutChat } },
           {
             $addToSet: { chats: newChat._id },
           },
@@ -364,13 +362,14 @@ export class MessagesService {
       if (!user.chats.some((chat) => chat.equals(chatId))) {
         throw new NotFoundException('User not in chat');
       }
+      const timestamp = new Date();
       await this.messageModel.updateMany(
         {
           chatId,
           senderId: { $ne: userId },
           'readBy.userId': { $ne: userId },
         },
-        { $addToSet: { readBy: { userId, timestamp: new Date() } } },
+        { $addToSet: { readBy: { userId, timestamp } } },
       );
       const newChat = (
         await this.chatsModel
@@ -400,7 +399,11 @@ export class MessagesService {
           .exec()
       )?.toObject();
       return newChat as typeof newChat & {
-        users: { _id: Types.ObjectId; displayName: User['displayName'] }[];
+        users: {
+          _id: Types.ObjectId;
+          displayName: User['displayName'];
+          avatarUrl: User['avatarUrl'];
+        }[];
         lastMessage: Message;
       };
     } catch (err) {

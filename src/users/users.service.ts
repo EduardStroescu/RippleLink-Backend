@@ -82,13 +82,16 @@ export class UsersService {
           .exec();
         if (user) throw new BadRequestException('Email address already in use');
       }
-      return await this.userModel
-        .findByIdAndUpdate(_id, updateUserDto, {
-          new: true,
-        })
-        .select('-password -isDeleted')
-        .populate('settings status')
-        .exec();
+
+      return (
+        await this.userModel
+          .findByIdAndUpdate(_id, updateUserDto, {
+            new: true,
+          })
+          .select('-password -isDeleted')
+          .populate('settings status')
+          .exec()
+      )?.toObject();
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(
@@ -136,9 +139,8 @@ export class UsersService {
         10,
       );
 
-      await this.userModel.findByIdAndUpdate(user._id, {
-        password: hashedPassword,
-      });
+      user.password = hashedPassword;
+      await user.save();
       return { success: 'Password changed' };
     } catch (err) {
       if (err instanceof HttpException) throw err;
@@ -148,24 +150,20 @@ export class UsersService {
     }
   }
 
-  async deleteUser(_id: Types.ObjectId, deleteUserDto: DeleteUserDto) {
+  async deleteUser(user: User, deleteUserDto: DeleteUserDto) {
     try {
       if (
         deleteUserDto.currentPassword !== deleteUserDto.confirmCurrentPassword
       )
         throw new BadRequestException('Passwords do not match');
 
-      const deletedUser = await this.userModel
-        .findById(_id)
-        .populate<{ settings: Settings }>({
+      const [deletedUser, isPasswordValid] = await Promise.all([
+        user.populate<{ settings: Settings }>({
           path: 'settings',
-        })
-        .exec();
+        }),
+        bcrypt.compare(deleteUserDto.currentPassword, user.password),
+      ]);
 
-      const isPasswordValid = await bcrypt.compare(
-        deleteUserDto.currentPassword,
-        deletedUser.password,
-      );
       if (!isPasswordValid) throw new UnauthorizedException('Invalid password');
 
       if (deletedUser.avatarUrl) {
@@ -178,20 +176,23 @@ export class UsersService {
           `${deletedUser._id}-files/${deletedUser.settings.backgroundImage.split('/').pop()}`,
         );
       }
-      await deletedUser.updateOne({
-        displayName: 'User',
-        firstName: null,
-        lastName: null,
-        email: null,
-        password: null,
-        avatarUrl: null,
-        refresh_token: null,
-        status: null,
-        settings: null,
-        isDeleted: true,
-      });
-      await this.statusModel.deleteOne({ userId: _id });
-      await this.settingsModel.deleteOne({ userId: _id });
+      await Promise.all([
+        deletedUser.updateOne({
+          displayName: 'User',
+          firstName: null,
+          lastName: null,
+          email: null,
+          password: null,
+          avatarUrl: null,
+          refresh_token: null,
+          status: null,
+          settings: null,
+          isDeleted: true,
+        }),
+        this.statusModel.deleteOne({ userId: deletedUser._id }),
+        this.settingsModel.deleteOne({ userId: deletedUser._id }),
+      ]);
+
       return { success: 'User deleted' };
     } catch (err) {
       if (err instanceof HttpException) throw err;

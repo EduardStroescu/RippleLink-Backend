@@ -47,11 +47,14 @@ export class StatusService {
 
   async createStatus(userId: Types.ObjectId) {
     try {
-      const updatedStatus = new this.statusModel({
-        userId,
-        lastSeen: new Date(),
-      });
-      return await updatedStatus.save();
+      const updatedStatus = (
+        await this.statusModel.create({
+          userId,
+          lastSeen: new Date(),
+        })
+      )?.toObject();
+
+      return updatedStatus;
     } catch (err) {
       throw new InternalServerErrorException(
         'Unable to create status. Please try again later!',
@@ -59,29 +62,27 @@ export class StatusService {
     }
   }
 
-  async updateStatus(_id: Types.ObjectId, updateStatusDto: UpdateStatusDto) {
+  async updateStatus(user: User, updateStatusDto: UpdateStatusDto) {
     try {
-      const user = await this.userModel
-        .findById(_id)
-        .populate({ path: 'status' })
-        .exec();
-
       let newStatus: Status;
       if (user.status) {
-        newStatus = await this.statusModel.findByIdAndUpdate(
-          user.status._id,
-          updateStatusDto,
-          { new: true },
-        );
+        newStatus = (
+          await this.statusModel.findByIdAndUpdate(
+            user.status,
+            updateStatusDto,
+            { new: true },
+          )
+        )?.toObject();
       } else {
-        newStatus = new this.statusModel({
-          userId: user._id,
-          ...updateStatusDto,
-        });
-        newStatus = (await newStatus.save())?.toObject();
+        newStatus = (
+          await this.statusModel.create({
+            userId: user._id,
+            ...updateStatusDto,
+          })
+        )?.toObject();
+        user.status = newStatus._id;
+        await user.save();
       }
-      user.status = newStatus._id;
-      await user.save();
       return newStatus;
     } catch (err) {
       throw new InternalServerErrorException(
@@ -98,12 +99,15 @@ export class StatusService {
         throw new Error('User not found');
       }
 
-      const updatedStatus = await this.statusModel
-        .findByIdAndUpdate(user.status, { lastSeen: new Date() }, { new: true })
-        .exec();
-
-      user.status = updatedStatus._id;
-      await user.save();
+      const updatedStatus = (
+        await this.statusModel
+          .findByIdAndUpdate(
+            user.status,
+            { lastSeen: new Date() },
+            { new: true },
+          )
+          .exec()
+      )?.toObject();
 
       return updatedStatus;
     } catch (err) {

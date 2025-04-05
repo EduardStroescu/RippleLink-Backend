@@ -107,6 +107,36 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  @SubscribeMessage('readMessages')
+  async readMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { chatId: string },
+  ) {
+    const { chatId } = body;
+    const { _id } = client.handshake.query;
+
+    try {
+      const updatedChat = await this.messagesService.readMessage(
+        new Types.ObjectId(_id as string),
+        new Types.ObjectId(chatId),
+      );
+      if (updatedChat.lastMessage.senderId._id.toString() !== _id) {
+        await this.redisService.updateInCacheByFilter<Message>(
+          `messages?chatId=${chatId}`,
+          { senderId: { $ne: _id } },
+          'readBy',
+          updatedChat.lastMessage.readBy,
+        );
+      }
+      this.updateChat(updatedChat, 'update');
+      this.server.to(chatId).emit('messagesRead', {
+        content: updatedChat,
+      });
+    } catch (err) {
+      // ignore error
+    }
+  }
+
   @SubscribeMessage('createMessage')
   async createMessage(
     @ConnectedSocket() client: Socket,
@@ -204,36 +234,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
     } catch (err) {
       this.handleError(client, err.message);
-    }
-  }
-
-  @SubscribeMessage('readMessages')
-  async readMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: { chatId: string },
-  ) {
-    const { chatId } = body;
-    const { _id } = client.handshake.query;
-
-    try {
-      const updatedChat = await this.messagesService.readMessage(
-        new Types.ObjectId(_id as string),
-        new Types.ObjectId(chatId),
-      );
-      if (updatedChat.lastMessage.senderId._id.toString() !== _id) {
-        await this.redisService.updateInCacheByFilter<Message>(
-          `messages?chatId=${chatId}`,
-          { senderId: { $ne: _id } },
-          'readBy',
-          updatedChat.lastMessage.readBy,
-        );
-      }
-      this.updateChat(updatedChat, 'update');
-      this.server.to(chatId).emit('messagesRead', {
-        content: updatedChat,
-      });
-    } catch (err) {
-      // ignore error
     }
   }
 
@@ -474,16 +474,19 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await Promise.all(
       newChatUsers.map((userId) => {
-        this.redisService.updateInCache(
+        const updateCachePromise = this.redisService.updateInCache(
           `chats?userId=${userId}`,
           async () => chat,
           { addNew: true },
         );
+
         if (existingChat && onlineUserIds.includes(userId)) {
           this.server.to(userId).emit('messageCreated', {
             content: chat.lastMessage,
           });
         }
+
+        return updateCachePromise;
       }),
     );
 

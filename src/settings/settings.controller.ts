@@ -11,6 +11,7 @@ import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { JwtGuard } from 'src/auth/guards';
 import { SettingsService } from './settings.service';
 import { UpdateSettingsDto } from './dto/UpdateSettings.dto';
+import { User } from 'schemas/User.schema';
 
 @ApiTags('Settings')
 @Controller('settings')
@@ -35,9 +36,9 @@ export class SettingsController {
   @UseGuards(JwtGuard)
   @Patch()
   async updateSettings(
-    @GetUser('_id') userId: string,
+    @GetUser() user: User,
     @Body() updateSettingsDto: UpdateSettingsDto,
   ) {
-    return await this.settingsService.updateSettings(userId, updateSettingsDto);
+    return await this.settingsService.updateSettings(user, updateSettingsDto);
   }
 }

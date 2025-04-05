@@ -84,12 +84,11 @@ export class ChatsService {
 
       if (!chat) {
         // Create a new chat if no existing chat is found
-        chat = new this.chatModel({
+        chat = await this.chatModel.create({
           users: [userId, ...createChatDto.userIds],
           type: createChatDto.type || 'dm',
           name: createChatDto.name || '',
         });
-        await chat.save();
       } else {
         wasExistingChat = true;
       }
@@ -132,39 +131,50 @@ export class ChatsService {
     }
   }
 
-  async updateChat(chatId: string, updateChatDto: UpdateChatDto) {
+  async updateChat(
+    userId: Types.ObjectId,
+    chatId: string,
+    updateChatDto: UpdateChatDto,
+  ) {
     try {
-      const updatedChat = (
-        await this.chatModel
-          .findByIdAndUpdate(chatId, updateChatDto, { new: true })
-          .populate([
-            {
-              path: 'users',
-              select: 'displayName avatarUrl',
-            },
-            {
-              path: 'lastMessage',
-              populate: [
-                {
-                  path: 'senderId',
-                  select: 'displayName',
-                  transform: (doc, id) =>
-                    doc || { _id: id, displayName: 'Server Event' },
-                },
-                {
-                  path: 'readBy.userId',
-                  model: 'User',
-                  select: '_id displayName avatarUrl',
-                },
-              ],
-            },
-          ])
-          .exec()
+      let chat = await this.chatModel.findById(chatId).exec();
+      if (!chat) throw new NotFoundException('Chat not found');
+
+      const isUserInChat = chat.users.some((user) => user.equals(userId));
+
+      if (!isUserInChat) {
+        throw new UnauthorizedException('You are not a member of this chat');
+      }
+
+      chat.set(updateChatDto);
+
+      chat = await chat.save();
+      chat = (
+        await chat.populate([
+          {
+            path: 'users',
+            select: 'displayName avatarUrl',
+          },
+          {
+            path: 'lastMessage',
+            populate: [
+              {
+                path: 'senderId',
+                select: 'displayName',
+                transform: (doc, id) =>
+                  doc || { _id: id, displayName: 'Server Event' },
+              },
+              {
+                path: 'readBy.userId',
+                model: 'User',
+                select: '_id displayName avatarUrl',
+              },
+            ],
+          },
+        ])
       )?.toObject();
 
-      if (!updatedChat) throw new NotFoundException('Chat not found');
-
-      return updatedChat;
+      return chat;
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(
@@ -175,39 +185,41 @@ export class ChatsService {
 
   async deleteChat(user: User, chatId: Types.ObjectId): Promise<Chat> {
     try {
-      const userInChat = user.chats.some((chat) => chat.equals(chatId));
+      const chat = (await this.chatModel.findById(chatId).exec())?.toObject();
+      if (!chat) throw new NotFoundException('Chat not found');
+
+      const userInChat = chat.users.some((chatUser) =>
+        chatUser.equals(user._id),
+      );
 
       if (!userInChat) {
         throw new UnauthorizedException('You are not a member of this chat');
       }
 
-      const updatedChat = (
-        await this.chatModel.findById(chatId).exec()
-      )?.toObject();
-
-      if (!updatedChat) throw new NotFoundException('Chat not found');
-
-      await this.userModel.findByIdAndUpdate(user._id, {
-        $pull: { chats: chatId },
-      });
-
-      const otherChatUsers = updatedChat.users.filter(
-        (person) => person._id.toString() !== user._id.toString(),
+      const otherChatUsers = chat.users.filter(
+        (person) => !person.equals(user._id),
       );
-      let persons: User[] | undefined;
-      if (!!otherChatUsers.length) {
-        persons = await Promise.all(
-          otherChatUsers.map((personId) => this.userModel.findById(personId)),
-        );
-      }
+      const [persons] = await Promise.all([
+        !!otherChatUsers.length
+          ? await this.userModel
+              .find({
+                _id: { $in: otherChatUsers },
+              })
+              .exec()
+          : Promise.resolve([]),
+        this.userModel.findByIdAndUpdate(user._id, {
+          $pull: { chats: chatId },
+        }),
+      ]);
+
       const checkIfOtherUsersAreInChat = persons.some((person) =>
         person.chats.some((chat) => chat.equals(chatId)),
       );
       if (!!persons.length && !checkIfOtherUsersAreInChat) {
-        await this.deleteAllContentForChat(chatId, updatedChat);
+        await this.deleteAllContentForChat(chatId, chat);
       }
 
-      return updatedChat;
+      return chat;
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(
@@ -220,20 +232,24 @@ export class ChatsService {
     chatId: Types.ObjectId,
     updatedChat: Chat,
   ) {
-    await this.chatModel.findByIdAndDelete(chatId);
-    const fileMessages = await this.messageModel
-      .find({ chatId: updatedChat._id, type: 'file' })
-      .exec();
-    const fileMessagesIds = fileMessages.flatMap((message) => {
-      if (Array.isArray(message.content)) {
-        return message.content.map(
-          (file) =>
-            `${message.senderId}-files/${file.content.split('/').pop()}`,
-        );
-      }
-    });
-    if (fileMessagesIds.length > 0)
-      this.fileUploaderService.removeFiles(fileMessagesIds);
+    const [fileMessages] = await Promise.all([
+      this.messageModel.find({ chatId: updatedChat._id, type: 'file' }).exec(),
+      this.chatModel.findByIdAndDelete(chatId),
+    ]);
+
+    const fileKeysToDelete = fileMessages.flatMap((message) =>
+      Array.isArray(message.content)
+        ? message.content.map(
+            (file) =>
+              `${message.senderId}-files/${file.content.split('/').pop()}`,
+          )
+        : [],
+    );
+
+    if (fileKeysToDelete.length > 0) {
+      this.fileUploaderService.removeFiles(fileKeysToDelete);
+    }
+
     await this.messageModel.deleteMany({ chatId: updatedChat._id });
   }
 }

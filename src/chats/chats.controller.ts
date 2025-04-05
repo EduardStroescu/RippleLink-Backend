@@ -75,7 +75,7 @@ export class ChatsController {
     description: 'Unable to create chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description: 'Invalid JWT bearer access token or not',
     status: 401,
   })
   @UseGuards(JwtGuard)
@@ -136,17 +136,19 @@ export class ChatsController {
     description: 'Unable to update chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description: 'Invalid JWT bearer access token or not a member of the chat',
     status: 401,
   })
   @UseGuards(JwtGuard)
   @HttpCode(HttpStatus.OK)
   @Patch(':chatId')
   async updateChat(
+    @GetUser('_id') userId: Types.ObjectId,
     @Param('chatId') chatId: string,
     @Body() updateChatDto: UpdateChatDto,
   ) {
     const updatedChat = await this.chatsService.updateChat(
+      userId,
       chatId,
       updateChatDto,
     );

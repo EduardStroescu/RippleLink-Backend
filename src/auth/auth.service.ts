@@ -38,6 +38,7 @@ export class AuthService {
       const password = await bcrypt.hash(createUserDto.password, 10);
 
       let newUser = new this.userModel({
+        _id: new Types.ObjectId(),
         email: createUserDto.email,
         firstName: createUserDto.firstName,
         lastName: createUserDto.lastName,
@@ -46,28 +47,29 @@ export class AuthService {
           createUserDto.firstName + createUserDto.lastName,
         password,
       });
-      newUser = await newUser.save();
 
-      if (createUserDto.avatarUrl) {
-        const userAvatar = await this.fileUploaderService.uploadBase64File(
-          'avatar',
-          newUser._id.toString(),
-          {
-            base64String: createUserDto.avatarUrl,
-          },
-        );
+      const [userAvatar, status] = await Promise.all([
+        createUserDto.avatarUrl
+          ? this.fileUploaderService.uploadBase64File(
+              'avatar',
+              newUser._id.toString(),
+              { base64String: createUserDto.avatarUrl },
+            )
+          : Promise.resolve(null),
+        this.statusService.createStatus(newUser._id),
+      ]);
 
+      if (userAvatar) {
         newUser.avatarUrl = userAvatar;
       }
-      const status = await this.statusService.createStatus(newUser._id);
 
-      const tokens = await this.signTokens(newUser._id, newUser.email);
-      await this.updateRefreshToken(newUser._id, tokens.refresh_token);
       newUser.status = status._id;
       newUser = await newUser.save();
 
-      newUser = await newUser.populate('status');
-      newUser = newUser.toObject();
+      const tokens = await this.signTokens(newUser._id, newUser.email);
+      await this.updateRefreshToken(newUser._id, tokens.refresh_token);
+
+      newUser = (await newUser.populate('status'))?.toObject();
 
       const strippedUser = stripUserOfSensitiveData(newUser);
       return { ...strippedUser, ...tokens };

@@ -14,22 +14,20 @@ export class SettingsService {
     private readonly fileUploaderService: FileUploaderService,
   ) {}
 
-  async updateSettings(userId: string, updateSettingsDto: UpdateSettingsDto) {
+  async updateSettings(user: User, updateSettingsDto: UpdateSettingsDto) {
     try {
-      const currentSettings = await this.settingsModel.findOne({ userId });
-
       let userBackgroundImage: string | undefined;
       if (updateSettingsDto.backgroundImage) {
         userBackgroundImage = await this.fileUploaderService.uploadBase64File(
           'background',
-          userId,
+          user._id.toString(),
           { base64String: updateSettingsDto.backgroundImage },
         );
       }
 
       const fieldsToUpdate = {
         ...updateSettingsDto,
-        userId,
+        userId: user._id,
         backgroundImage: userBackgroundImage,
       };
 
@@ -39,19 +37,17 @@ export class SettingsService {
       let updatedSettings: Settings;
 
       // If current settings exist, update them
-      if (currentSettings) {
+      if (user.settings) {
         updatedSettings = await this.settingsModel.findOneAndUpdate(
-          { userId },
+          { userId: user._id },
           fieldsToUpdate,
           { new: true },
         );
       } else {
         // Otherwise, create new settings and associate with the user
-        updatedSettings = new this.settingsModel(fieldsToUpdate);
-        await updatedSettings.save();
-        await this.userModel.findByIdAndUpdate(userId, {
-          settings: updatedSettings._id,
-        });
+        updatedSettings = await this.settingsModel.create(fieldsToUpdate);
+        user.settings = updatedSettings._id;
+        await user.save();
       }
 
       return updatedSettings?.toObject();

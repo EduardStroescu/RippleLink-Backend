@@ -13,6 +13,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtGuard } from 'src/auth/guards';
 import { StatusDto } from 'src/lib/dtos/status.dto';
+import { User } from 'schemas/User.schema';
 
 @ApiTags('Status')
 @Controller('status')
@@ -57,9 +58,9 @@ export class StatusController {
   @UseGuards(JwtGuard)
   @Patch()
   async updateStatus(
-    @GetUser('_id') _id: Types.ObjectId,
+    @GetUser() user: User,
     @Body() updateStatusDto: UpdateStatusDto,
   ) {
-    return await this.statusService.updateStatus(_id, updateStatusDto);
+    return await this.statusService.updateStatus(user, updateStatusDto);
   }
 }

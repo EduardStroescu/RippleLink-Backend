@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { FilterQuery, Model, Types } from 'mongoose';
 import { Chat } from 'schemas/Chat.schema';
 import { Message } from 'schemas/Message.schema';
 import { User } from 'schemas/User.schema';
@@ -39,7 +39,7 @@ export class MessagesService {
       if (!isUserInChat)
         throw new UnauthorizedException('You are not a member of the chat');
 
-      const query: any = { chatId };
+      const query: FilterQuery<Message> = { chatId };
       if (cursor) {
         query.createdAt = { $lt: new Date(cursor) };
       }
@@ -70,7 +70,7 @@ export class MessagesService {
         messages.length > 0 ? messages[0].createdAt.toISOString() : null;
 
       return {
-        messages,
+        messages: messages,
         nextCursor,
       };
     } catch (err) {
@@ -91,9 +91,15 @@ export class MessagesService {
       throw new BadRequestException('Invalid input');
     }
     try {
-      let newMessage: Message;
+      let chat = await this.chatsModel.findById(chatId).exec();
+      if (!chat) throw new NotFoundException('Chat not found');
 
-      newMessage = await this.messageModel.create({
+      const isUserInChat = chat.users.some((user) => user.equals(userId));
+      if (!isUserInChat)
+        throw new UnauthorizedException('You are not a member of the chat');
+
+      const message = await this.messageModel.create({
+        _id: new Types.ObjectId(),
         senderId: type !== 'event' ? userId : new Types.ObjectId(),
         chatId,
         content,
@@ -104,46 +110,49 @@ export class MessagesService {
             : [],
       });
 
-      const newChat = (
-        await this.chatsModel
-          .findByIdAndUpdate(
-            chatId,
-            {
-              lastMessage: newMessage._id,
-            },
-            { new: true },
-          )
-          .populate([
-            {
-              path: 'users',
-              select: 'displayName avatarUrl',
-            },
-            {
-              path: 'lastMessage',
-              populate: [
-                {
-                  path: 'senderId',
-                  select: 'displayName',
-                  transform: (doc, id) =>
-                    doc || { _id: id, displayName: 'Server Event' },
-                },
-                {
-                  path: 'readBy.userId',
-                  model: 'User',
-                  select: '_id displayName avatarUrl',
-                },
-              ],
-            },
-          ])
-      )?.toObject();
+      chat.lastMessage = message._id;
+      chat = await chat.save();
+      const interlocutorIds = chat.users;
 
-      if (!newChat) throw new NotFoundException('Chat not found');
+      const [newChat, newMessage, interlocutors] = await Promise.all([
+        chat.populate([
+          {
+            path: 'users',
+            select: 'displayName avatarUrl',
+          },
+          {
+            path: 'lastMessage',
+            populate: [
+              {
+                path: 'senderId',
+                select: 'displayName',
+                transform: (doc, id) =>
+                  doc || { _id: id, displayName: 'Server Event' },
+              },
+              {
+                path: 'readBy.userId',
+                model: 'User',
+                select: '_id displayName avatarUrl',
+              },
+            ],
+          },
+        ]),
+        message.populate([
+          {
+            path: 'senderId',
+            select: 'displayName',
+            transform: (doc, id) =>
+              doc || { _id: id, displayName: 'Server Event' },
+          },
+          {
+            path: 'readBy.userId',
+            model: 'User',
+            select: '_id displayName avatarUrl',
+          },
+        ]),
+        this.userModel.find({ _id: { $in: interlocutorIds } }).exec(),
+      ]);
 
-      const interlocutorIds = newChat.users.map((user) => user._id);
-
-      const interlocutors = await this.userModel
-        .find({ _id: { $in: interlocutorIds } })
-        .exec();
       const interlocutorsWithoutChat = interlocutors
         .filter((interlocutor) => !interlocutor.chats.includes(newChat._id))
         .map((interlocutor) => interlocutor._id);
@@ -156,23 +165,7 @@ export class MessagesService {
         );
       }
 
-      newMessage = (
-        await newMessage.populate([
-          {
-            path: 'senderId',
-            select: 'displayName',
-            transform: (doc, id) =>
-              doc || { _id: id, displayName: 'Server Event' },
-          },
-          {
-            path: 'readBy.userId',
-            model: 'User',
-            select: '_id displayName avatarUrl',
-          },
-        ])
-      )?.toObject();
-
-      return { newMessage, newChat };
+      return { newMessage: newMessage.toObject(), newChat: newChat.toObject() };
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(
@@ -191,7 +184,14 @@ export class MessagesService {
       throw new BadRequestException('Invalid input');
 
     try {
-      let updatedMessage = await this.messageModel
+      const chat = await this.chatsModel.findById(chatId).exec();
+      if (!chat) throw new NotFoundException('Chat not found');
+
+      const userInChat = chat.users.some((user) => user.equals(userId));
+      if (!userInChat)
+        throw new UnauthorizedException('You are not a member of the chat');
+
+      const newMessage = await this.messageModel
         .findOneAndUpdate(
           { _id: messageId, senderId: userId, chatId },
           { content },
@@ -199,21 +199,22 @@ export class MessagesService {
         )
         .exec();
 
-      if (!updatedMessage) throw new NotFoundException('Message not found');
+      if (!newMessage) throw new NotFoundException('Message not found');
 
-      let updatedChat: Chat | null = await this.chatsModel
-        .findById(chatId)
-        .exec();
-
-      if (updatedChat.lastMessage.equals(updatedMessage._id)) {
-        await updatedChat.updateOne(chatId, {
-          $set: { lastMessage: updatedMessage._id },
-        });
-
-        updatedChat = (
-          await this.chatsModel
-            .findById(chatId)
-            .populate([
+      const [updatedMessage, updatedChat] = await Promise.all([
+        newMessage.populate([
+          {
+            path: 'senderId',
+            select: '_id, displayName',
+          },
+          {
+            path: 'readBy.userId',
+            model: 'User',
+            select: '_id displayName avatarUrl',
+          },
+        ]),
+        chat.lastMessage.equals(newMessage._id)
+          ? chat.populate([
               {
                 path: 'users',
                 select: 'displayName avatarUrl',
@@ -233,28 +234,12 @@ export class MessagesService {
                 ],
               },
             ])
-            .exec()
-        )?.toObject();
-      } else {
-        updatedChat = null;
-      }
+          : Promise.resolve(null),
+      ]);
 
-      updatedMessage = (
-        await updatedMessage.populate([
-          {
-            path: 'senderId',
-            select: '_id, displayName',
-          },
-          {
-            path: 'readBy.userId',
-            model: 'User',
-            select: '_id displayName avatarUrl',
-          },
-        ])
-      ).toObject();
       return {
-        updatedMessage,
-        updatedChat,
+        updatedMessage: updatedMessage.toObject(),
+        updatedChat: updatedChat?.toObject() ?? null,
       };
     } catch (err) {
       if (err instanceof HttpException) throw err;
@@ -269,14 +254,28 @@ export class MessagesService {
     userId: Types.ObjectId,
     chatId: Types.ObjectId,
   ): Promise<{ deletedMessage: Message; updatedChat: Chat }> {
-    if (!messageId || !userId) {
+    if (!messageId || !userId || !chatId) {
       throw new Error('Invalid input');
     }
 
     try {
-      const deletedMessage = await this.messageModel
-        .findOne({ _id: messageId, senderId: userId, chatId })
-        .exec();
+      const chat = await this.chatsModel.findById(chatId).exec();
+      if (!chat) throw new NotFoundException('Chat not found');
+
+      const userInChat = chat.users.some((user) => user.equals(userId));
+      if (!userInChat)
+        throw new UnauthorizedException('You are not a member of the chat');
+
+      const [deletedMessage, latestMessages] = await Promise.all([
+        this.messageModel
+          .findOne({ _id: messageId, senderId: userId, chatId })
+          .exec(),
+        this.messageModel
+          .find({ chatId })
+          .limit(2)
+          .sort({ createdAt: -1 })
+          .exec(),
+      ]);
 
       if (!deletedMessage) throw new NotFoundException('Message not found');
 
@@ -291,20 +290,14 @@ export class MessagesService {
         );
       }
 
-      const latestMessages = await this.messageModel
-        .find({ chatId })
-        .limit(2)
-        .sort({ createdAt: -1 })
-        .exec();
-
       // Update the chat's last message if the deleted message is the latest message
-      let updatedChat: Chat | undefined;
+      let updatedChat: Chat | null = null;
       if (
         latestMessages.length > 1 &&
-        latestMessages[0]._id.toString() === deletedMessage._id.toString()
+        deletedMessage._id.equals(latestMessages[0]._id)
       ) {
-        updatedChat = (
-          await this.chatsModel
+        const [newChat] = await Promise.all([
+          this.chatsModel
             .findByIdAndUpdate(
               chatId,
               {
@@ -334,11 +327,12 @@ export class MessagesService {
                 ],
               },
             ])
-            .exec()
-        )?.toObject();
+            .exec(),
+          deletedMessage.deleteOne(),
+        ]);
+        updatedChat = newChat?.toObject() ?? null;
       }
 
-      await deletedMessage.deleteOne();
       return {
         deletedMessage: deletedMessage.toObject(),
         updatedChat,
@@ -355,13 +349,14 @@ export class MessagesService {
 
   async readMessage(userId: Types.ObjectId, chatId: Types.ObjectId) {
     try {
-      const user = await this.userModel.findById(userId);
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-      if (!user.chats.some((chat) => chat.equals(chatId))) {
-        throw new NotFoundException('User not in chat');
-      }
+      let chat = await this.chatsModel.findById(chatId).exec();
+      if (!chat) throw new NotFoundException('Chat not found');
+
+      const userInChat = chat.users.some((user) => user.equals(userId));
+
+      if (!userInChat)
+        throw new UnauthorizedException('You are not a member of the chat');
+
       const timestamp = new Date();
       await this.messageModel.updateMany(
         {
@@ -371,34 +366,33 @@ export class MessagesService {
         },
         { $addToSet: { readBy: { userId, timestamp } } },
       );
-      const newChat = (
-        await this.chatsModel
-          .findById(chatId)
-          .populate([
-            {
-              path: 'users',
-              select: 'displayName avatarUrl',
-            },
-            {
-              path: 'lastMessage',
-              populate: [
-                {
-                  path: 'senderId',
-                  select: 'displayName',
-                  transform: (doc, id) =>
-                    doc || { _id: id, displayName: 'Server Event' },
-                },
-                {
-                  path: 'readBy.userId',
-                  model: 'User',
-                  select: '_id displayName avatarUrl',
-                },
-              ],
-            },
-          ])
-          .exec()
+
+      chat = (
+        await chat.populate([
+          {
+            path: 'users',
+            select: 'displayName avatarUrl',
+          },
+          {
+            path: 'lastMessage',
+            populate: [
+              {
+                path: 'senderId',
+                select: 'displayName',
+                transform: (doc, id) =>
+                  doc || { _id: id, displayName: 'Server Event' },
+              },
+              {
+                path: 'readBy.userId',
+                model: 'User',
+                select: '_id displayName avatarUrl',
+              },
+            ],
+          },
+        ])
       )?.toObject();
-      return newChat as typeof newChat & {
+
+      return chat as typeof chat & {
         users: {
           _id: Types.ObjectId;
           displayName: User['displayName'];

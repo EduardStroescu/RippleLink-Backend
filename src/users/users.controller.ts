@@ -190,9 +190,9 @@ export class UsersController {
   @Delete()
   @HttpCode(204)
   async deleteUser(
-    @GetUser('_id') _id: Types.ObjectId,
+    @GetUser() user: User,
     @Body() deleteUserDto: DeleteUserDto,
   ) {
-    return await this.usersService.deleteUser(_id, deleteUserDto);
+    return await this.usersService.deleteUser(user, deleteUserDto);
   }
 }

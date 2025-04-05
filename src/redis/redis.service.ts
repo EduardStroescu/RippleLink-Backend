@@ -22,7 +22,6 @@ interface Identifiable {
 @Injectable()
 export class RedisService {
   EXPIRE_TIME_GENERAL_DATA = 3600; // 1 hour
-  EXPIRE_TIME_ONLINE_USERS = 3600; // 1 hour
 
   constructor(
     @InjectRedis() private readonly redis: Redis,
@@ -276,11 +275,7 @@ export class RedisService {
   // Add user to the online users redis set
   async connectUser(userId: string): Promise<void> {
     try {
-      await this.redis.sadd(
-        'onlineUsers',
-        userId,
-        this.EXPIRE_TIME_ONLINE_USERS,
-      );
+      await this.redis.sadd('onlineUsers', userId);
     } catch (error) {
       throw new InternalServerErrorException(
         `An unexpected error occured. Please try again later!`,

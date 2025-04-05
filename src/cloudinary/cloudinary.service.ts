@@ -5,6 +5,7 @@ import {
   UploadApiOptions,
   UploadApiResponse,
 } from 'cloudinary';
+import { Types } from 'mongoose';
 import { Readable } from 'stream';
 
 @Injectable()
@@ -17,9 +18,8 @@ export class CloudinaryService {
     const uploadOptions: UploadApiOptions = {
       upload_preset: 'unsigned_upload',
       resource_type: 'auto',
-      public_id: name?.split('.')[0],
+      public_id: `${name?.split('.')[0]}-${new Types.ObjectId()}`,
       folder: `${userId}-files`,
-      unique_filename: true,
       use_asset_folder_as_public_id_prefix: true,
     };
     if (uploadType !== 'other') {
@@ -53,9 +53,8 @@ export class CloudinaryService {
     const uploadOptions: UploadApiOptions = {
       upload_preset: 'unsigned_upload',
       resource_type: 'auto',
-      public_id: name?.split('.')[0],
+      public_id: `${name?.split('.')[0]}-${new Types.ObjectId()}`,
       folder: `${userId}-files`,
-      unique_filename: true,
       use_asset_folder_as_public_id_prefix: true,
     };
     if (uploadType !== 'other') {

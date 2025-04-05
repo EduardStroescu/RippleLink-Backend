@@ -11,7 +11,7 @@ class ReadByEntryDto {
   userId: {
     _id: User['_id'];
     displayName: User['displayName'];
-    avatarUrl: User['avatarUrl'];
+    avatarUrl?: User['avatarUrl'];
   };
 
   @ApiProperty({

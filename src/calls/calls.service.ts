@@ -82,9 +82,9 @@ export class CallsService {
             otherParticipants.forEach((participant) => {
               userObject.offers.push({
                 to: participant._id.toString(),
-                sdp: `sdp:${_id}:${participant._id}:offer` as unknown as CallDto['participants'][number]['offers'][number]['sdp'],
+                sdp: `sdp:${_id}:${participant._id.toString()}:offer` as unknown as CallDto['participants'][number]['offers'][number]['sdp'],
                 iceCandidates:
-                  `ice:${_id}:${participant._id}:offer` as unknown as CallDto['participants'][number]['offers'][number]['iceCandidates'],
+                  `ice:${_id}:${participant._id.toString()}:offer` as unknown as CallDto['participants'][number]['offers'][number]['iceCandidates'],
               });
             });
           }
@@ -115,9 +115,9 @@ export class CallsService {
         call.participants[userIndex].answers = otherParticipants.map(
           (participant) => ({
             to: participant.userId._id.toString(),
-            sdp: `sdp:${_id}:${participant.userId._id}:answer` as unknown as CallDto['participants'][number]['answers'][number]['sdp'],
+            sdp: `sdp:${_id}:${participant.userId._id.toString()}:answer`,
             iceCandidates:
-              `ice:${_id}:${participant.userId._id}:answer` as unknown as CallDto['participants'][number]['answers'][number]['iceCandidates'],
+              `ice:${_id}:${participant.userId._id.toString()}:answer` as unknown as CallDto['participants'][number]['answers'][number]['iceCandidates'],
           }),
         );
         call.participants[userIndex].status = 'inCall';
@@ -189,35 +189,13 @@ export class CallsService {
 
       const currUser = call.participants[currUserIndex];
       if (offer) {
-        this.redisService.addOrReplaceSDP(_id, to, offer, 'offer');
-        const offerIndex = currUser.offers.findIndex(
-          (offer) => offer.to === to,
-        );
-
-        if (offerIndex === -1) {
-          currUser.offers.push({
-            to,
-            sdp: `sdp:${_id}:${to}:offer` as unknown as CallDto['participants'][number]['offers'][number]['sdp'],
-            iceCandidates:
-              `ice:${_id}:${to}:offer` as unknown as CallDto['participants'][number]['offers'][number]['iceCandidates'],
-          });
-        }
+        this.processSDP('offer', offer, 'offers', currUser, to);
       }
+
       if (answer) {
-        this.redisService.addOrReplaceSDP(_id, to, answer, 'answer');
-        const answerIndex = currUser.answers.findIndex(
-          (answer) => answer.to === to,
-        );
-
-        if (answerIndex === -1) {
-          currUser.answers.push({
-            to,
-            sdp: `sdp:${_id}:${to}:answer` as unknown as CallDto['participants'][number]['answers'][number]['sdp'],
-            iceCandidates:
-              `ice:${_id}:${to}:answer` as unknown as CallDto['participants'][number]['answers'][number]['iceCandidates'],
-          });
-        }
+        this.processSDP('answer', answer, 'answers', currUser, to);
       }
+
       if (offer || answer) {
         call.participants[currUserIndex] = currUser;
       }
@@ -263,8 +241,8 @@ export class CallsService {
           ),
         ]);
 
-        call.participants = call.participants.map((participant, index) => {
-          if (index === userIndex) {
+        call.participants = call.participants.map((participant) => {
+          if (participant.userId._id.toString() === _id) {
             return {
               ...participant,
               offers: [],
@@ -333,6 +311,37 @@ export class CallsService {
       return call;
     } catch (_) {
       // Ignore error
+    }
+  }
+
+  private processSDP(
+    type: 'offer' | 'answer',
+    sdp: string | undefined,
+    target: 'offers' | 'answers',
+    currUser: CallDto['participants'][number],
+    to: string,
+  ) {
+    if (sdp) {
+      this.redisService.addOrReplaceSDP(
+        currUser.userId._id.toString(),
+        to,
+        sdp,
+        type,
+      );
+      const index = currUser[target].findIndex((entry) => entry.to === to);
+
+      if (index === -1) {
+        currUser[target].push({
+          to,
+          sdp: `${type}:${currUser.userId._id.toString()}:${to}:${type}` as CallDto['participants'][number][
+            | 'offers'
+            | 'answers'][number]['sdp'],
+          iceCandidates:
+            `${type}:${currUser.userId._id.toString()}:${to}:${type}` as unknown as CallDto['participants'][number][
+              | 'offers'
+              | 'answers'][number]['iceCandidates'],
+        });
+      }
     }
   }
 }

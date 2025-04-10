@@ -52,6 +52,7 @@ export class ChatsService {
           },
         ])
         .sort({ updatedAt: -1 })
+        .lean()
         .exec();
 
       return chats;

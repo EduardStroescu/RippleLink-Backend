@@ -10,7 +10,6 @@ import { FileUploaderService } from 'src/fileUploader/fileUploader.provider';
 export class SettingsService {
   constructor(
     @InjectModel(Settings.name) private settingsModel: Model<Settings>,
-    @InjectModel(User.name) private userModel: Model<User>,
     private readonly fileUploaderService: FileUploaderService,
   ) {}
 

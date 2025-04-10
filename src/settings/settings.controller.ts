@@ -39,6 +39,6 @@ export class SettingsController {
     @GetUser() user: User,
     @Body() updateSettingsDto: UpdateSettingsDto,
   ) {
-    return await this.settingsService.updateSettings(user, updateSettingsDto);
+    return this.settingsService.updateSettings(user, updateSettingsDto);
   }
 }

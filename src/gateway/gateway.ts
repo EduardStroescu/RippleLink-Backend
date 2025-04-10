@@ -1,3 +1,4 @@
+import { UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -13,6 +14,7 @@ import { Types } from 'mongoose';
 import { Chat } from 'schemas/Chat.schema';
 import { FileContent, Message } from 'schemas/Message.schema';
 import { Server, Socket } from 'socket.io';
+import { JwtGuard } from 'src/auth/guards';
 import { CallsService } from 'src/calls/calls.service';
 import { FileUploaderService } from 'src/fileUploader/fileUploader.provider';
 import { CallDto } from 'src/lib/dtos/call.dto';
@@ -40,7 +42,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { _id } = socket.handshake.query;
 
     if (!token) {
-      this.handleError(socket, 'Authentication token is missing');
+      this.handleError(socket, 'Failed to connect');
       socket.disconnect();
       return;
     }
@@ -74,8 +76,9 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('joinRoom')
-  async handleJoinRoom(
+  handleJoinRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { room: string },
   ) {
@@ -84,8 +87,9 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.join(room);
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('leaveRoom')
-  async handleLeaveRoom(
+  handleLeaveRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { room: string },
   ) {
@@ -94,8 +98,9 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.leave(room);
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('typing')
-  async handleTyping(
+  handleTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { chatId: string; isTyping: boolean },
   ) {
@@ -107,6 +112,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('readMessages')
   async readMessage(
     @ConnectedSocket() client: Socket,
@@ -128,15 +134,17 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
           updatedChat.lastMessage.readBy,
         );
       }
-      this.updateChat(updatedChat, 'update');
+      this.createOrUpdateChat(updatedChat, { type: 'update' });
       this.server.to(chatId).emit('messagesRead', {
         content: updatedChat,
       });
     } catch (err) {
       // ignore error
     }
+    return { status: 'success' };
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('createMessage')
   async createMessage(
     @ConnectedSocket() client: Socket,
@@ -158,20 +166,21 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
       const data = await this.redisService.invalidateCacheKey(
         `messages?chatId=${chatId}`,
-        async () => newMessage,
+        newMessage,
       );
 
-      this.updateChat(newChat, 'create');
-      client.emit('messageCreated', { content: data });
-      client.broadcast.to(chatId).emit('messageCreated', {
+      this.createOrUpdateChat(newChat, { type: 'create' });
+      this.server.to(chatId).emit('messageCreated', {
         content: data,
       });
-      if (type === 'file') return { status: 'sent', message: newMessage };
+      if (type === 'file') return { status: 'success', message: data };
+      return { status: 'success' };
     } catch (err) {
-      this.handleError(client, err.message);
+      return { status: 'error', error: { message: err.message } };
     }
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('updateMessage')
   async updateMessage(
     @ConnectedSocket() client: Socket,
@@ -192,20 +201,22 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const response = await this.redisService.updateInCache(
         `messages?chatId=${chatId}`,
-        async () => updatedMessage,
+        updatedMessage,
       );
       if (updatedChat) {
-        this.updateChat(updatedChat, 'update');
+        this.createOrUpdateChat(updatedChat, { type: 'update' });
       }
 
       this.server.to(chatId).emit(`messageUpdated`, {
         content: response,
       });
+      return { status: 'success' };
     } catch (err) {
-      this.handleError(client, err.message);
+      return { status: 'error', error: { message: err.message } };
     }
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('deleteMessage')
   async deleteMessage(
     @ConnectedSocket() client: Socket,
@@ -223,20 +234,22 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         );
       const response = await this.redisService.invalidateCacheKey(
         `messages?chatId=${chatId}`,
-        async () => deletedMessage,
+        deletedMessage,
       );
       if (updatedChat) {
-        this.updateChat(updatedChat, 'delete');
+        this.createOrUpdateChat(updatedChat, { type: 'update' });
       }
 
       this.server.to(chatId).emit('messageDeleted', {
         content: response,
       });
+      return { status: 'success' };
     } catch (err) {
-      this.handleError(client, err.message);
+      return { status: 'error', error: { message: err.message } };
     }
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('joinCall')
   async handleJoinCall(
     @MessageBody()
@@ -257,38 +270,46 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
           content: `Call Started`,
           type: 'event',
         });
-        client.emit('callJoined', { call: newCall });
+        return { status: 'success', call: newCall };
       } else {
-        const checkInterval = setInterval(async () => {
-          const iceSent = await this.callService.checkIfEveryoneInCallSentIce(
-            chatId,
-            _id as string,
-          );
+        try {
+          const existingCall = await new Promise<CallDto>((resolve, reject) => {
+            const checkInterval = setInterval(async () => {
+              const iceSent =
+                await this.callService.checkIfEveryoneInCallSentIce(
+                  chatId,
+                  _id as string,
+                );
 
-          if (iceSent) {
-            clearInterval(checkInterval);
-            clearTimeout(timeout);
+              if (iceSent) {
+                clearInterval(checkInterval);
+                clearTimeout(timeout);
 
-            const existingCall = await this.callService.joinCall(
-              _id as string,
-              chatId,
-            );
+                const call = await this.callService.joinCall(
+                  _id as string,
+                  chatId,
+                );
+                resolve(call);
+              }
+            }, 200);
 
-            client.emit('callJoined', { call: existingCall });
-          }
-        }, 1000);
+            const timeout = setTimeout(() => {
+              clearInterval(checkInterval);
+              reject(new Error('Call join timeout'));
+            }, 1000);
+          });
 
-        const maxWaitTime = 10000; // 10 seconds
-        const timeout = setTimeout(() => {
-          clearInterval(checkInterval);
-          client.emit('callJoined', { error: 'Call join timeout' });
-        }, maxWaitTime);
+          return { status: 'success', call: existingCall };
+        } catch (error) {
+          return { status: 'error', error: { message: error.message } };
+        }
       }
     } catch (err) {
-      this.handleError(client, 'Failed to join call');
+      return { status: 'error', error: { message: 'Failed to join call' } };
     }
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('sendCallEvent')
   async sendCallEvent(
     @MessageBody()
@@ -316,11 +337,17 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.broadcast
         .to(participantId)
         .emit('callEvent', { message: offer ?? answer, participantId: _id });
+
+      return { status: 'success' };
     } catch (err) {
-      this.handleError(client, 'Failed to send call event');
+      return {
+        status: 'error',
+        error: { message: 'Failed to send call event' },
+      };
     }
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('saveIceCandidates')
   async saveIceCandidates(
     @MessageBody()
@@ -343,13 +370,19 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         candidatesType,
         to: to,
       });
-      if (!updatedCall) return;
-      await this.updateCalls(updatedCall);
+      if (updatedCall) {
+        await this.updateCalls(updatedCall);
+      }
+      return { status: 'success' };
     } catch (err) {
-      this.handleError(client, 'Failed to update ice candidates');
+      return {
+        status: 'error',
+        error: { message: 'Failed to update ice candidates' },
+      };
     }
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('endCall')
   async endCall(
     @MessageBody() body: { chatId: string },
@@ -372,8 +405,10 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (_) {
       // Ignore error
     }
+    return { status: 'success' };
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('rejectCall')
   async rejectCall(
     @MessageBody() body: { chatId: string },
@@ -388,11 +423,13 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         chatId,
       );
       await this.updateCalls(updatedCall);
-    } catch (err) {
-      this.handleError(client, err.message);
+    } catch (_) {
+      // Ignore error
     }
+    return { status: 'success' };
   }
 
+  @UseGuards(JwtGuard)
   @SubscribeMessage('sendChunkedFile')
   async sendChunkedFile(
     @MessageBody()
@@ -438,104 +475,71 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
             content: response.get(file.fileId),
           })),
         });
-        return { success: true };
+        return { status: 'success' };
       }
 
       this.server.to(message.chatId).emit(`messageUpdated`, {
         content: message,
       });
-      return { success: true };
+      return { status: 'success' };
     } catch (err) {
-      this.deleteMessage(client, {
-        chatId: message.chatId,
-        messageId: message._id,
-      });
+      try {
+        this.deleteMessage(client, {
+          chatId: message.chatId,
+          messageId: message._id,
+        });
+      } catch (_) {
+        // Ignore error
+      }
 
-      this.handleError(client, "Couldn't send file. Please try again later!");
-      return { success: false };
+      return {
+        status: 'error',
+        error: { message: "Couldn't send file. Please try again later!" },
+      };
     }
   }
 
-  async createChat(chat: Chat, existingChat: boolean) {
-    const onlineUsers = await this.redisService.getOnlineUsers();
-
-    const onlineUserSet = new Set(onlineUsers);
+  async createOrUpdateChat(
+    chat: Chat,
+    options?: { type: 'create' | 'update'; existingChat?: boolean },
+  ) {
     const newChatUsers = chat.users.map((user) => user._id.toString());
-    const onlineUserIds = newChatUsers.filter((userId) =>
-      onlineUserSet.has(userId),
-    );
 
-    if (existingChat) {
+    if (options.type === 'create' && options.existingChat) {
       await this.redisService.invalidateCacheKey(
         `messages?chatId=${chat._id}`,
-        async () => chat.lastMessage,
+        chat.lastMessage,
       );
     }
 
     await Promise.all(
-      newChatUsers.map((userId) => {
-        const updateCachePromise = this.redisService.updateInCache(
-          `chats?userId=${userId}`,
-          async () => chat,
-          { addNew: true },
-        );
-
-        if (existingChat && onlineUserIds.includes(userId)) {
-          this.server.to(userId).emit('messageCreated', {
-            content: chat.lastMessage,
-          });
-        }
-
-        return updateCachePromise;
-      }),
-    );
-
-    // Broadcast the new chat to all online members of the chat
-    if (!!onlineUserIds.length) {
-      this.server.to(onlineUserIds).emit('chatCreated', {
-        content: chat,
-      });
-    }
-  }
-
-  async updateChat(
-    updatedChat: Chat,
-    // Separation made for the eventType to be able distinguish events on the client
-    eventType: 'create' | 'update' | 'delete',
-  ) {
-    const onlineUsers = await this.redisService.getOnlineUsers();
-    const onlineUserSet = new Set(onlineUsers);
-    const userIds = updatedChat.users.map((user) => user._id.toString());
-    const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
-
-    // Update respective chat cache data for each user in the chat
-    await Promise.all(
-      userIds.map((userId) =>
-        this.redisService.updateInCache(
-          `chats?userId=${userId}`,
-          async () => updatedChat,
-          { addNew: eventType === 'create' },
-        ),
+      newChatUsers.map((userId) =>
+        this.redisService.updateInCache(`chats?userId=${userId}`, chat, {
+          addNew: options.type === 'create',
+        }),
       ),
     );
 
-    // Broadcast the updated chat to all online members of the chat
-    if (!!onlineUserIds.length) {
-      this.server.to(onlineUserIds).emit('chatUpdated', {
-        content: { ...updatedChat, eventType },
-      });
+    // Broadcast the new chat to all online members of the chat
+    if (!!newChatUsers.length) {
+      this.server
+        .to(newChatUsers)
+        .emit('chatCreatedOrUpdated', { chat, eventType: options.type });
+
+      if (options.type === 'create' && options.existingChat) {
+        this.server.to(newChatUsers).emit('messageCreated', {
+          content: chat.lastMessage,
+        });
+      }
     }
   }
 
   private async updateCalls(updatedCall: CallDto) {
-    const onlineUsers = await this.redisService.getOnlineUsers();
-    const onlineUserSet = new Set(onlineUsers);
     const userIds = updatedCall.chatId.users.map((user) => user._id.toString());
-    const onlineUserIds = userIds.filter((userId) => onlineUserSet.has(userId));
 
     // Broadcast the updated chat to all online members of the chat
-    if (!!onlineUserIds.length) {
-      this.server.to(onlineUserIds).emit('callsUpdated', {
+    if (!!userIds.length) {
+      this.server.to(userIds).emit('callsUpdated', {
         content: updatedCall,
       });
     }

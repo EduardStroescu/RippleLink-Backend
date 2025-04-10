@@ -33,13 +33,13 @@ export class RedisService {
     return this.redis;
   }
 
-  async getOrSetCache<T>(key: string, cb: () => Promise<T>): Promise<T> {
+  async getOrSetCache<T>(key: string, cb: Promise<T>): Promise<T> {
     try {
       const data = await this.redis.get(key);
       if (data) {
         return JSON.parse(data);
       }
-      const freshData = await cb();
+      const freshData = cb instanceof Promise ? await cb : cb;
 
       await this.redis.setex(
         key,
@@ -93,13 +93,13 @@ export class RedisService {
 
   async updateInCache<T extends Identifiable>(
     key: string,
-    cb: () => Promise<T>,
+    cb: Promise<T> | T,
     { addNew = true }: { addNew?: boolean } = {},
   ) {
     try {
       // Retrieve existing cache data
       const cacheData = await this.redis.get(key);
-      const updatedData = await cb();
+      const updatedData = cb instanceof Promise ? await cb : cb;
 
       if (cacheData) {
         let parsedData: T[] = JSON.parse(cacheData);
@@ -222,12 +222,12 @@ export class RedisService {
 
   async deleteFromCache<T extends Identifiable>(
     key: string,
-    cb: () => Promise<T>,
+    cb: Promise<T> | T,
   ) {
     try {
       // Retrieve existing cache data
       const cacheData = await this.redis.get(key);
-      const deletedData = await cb();
+      const deletedData = cb instanceof Promise ? await cb : cb;
 
       if (cacheData) {
         let parsedData: T[] = JSON.parse(cacheData);
@@ -259,11 +259,11 @@ export class RedisService {
 
   async invalidateCacheKey<T extends Identifiable>(
     key: string,
-    cb: () => Promise<T>,
+    cb: Promise<T> | T,
   ) {
     try {
       this.redis.del(key);
-      return await cb();
+      return cb instanceof Promise ? await cb : cb;
     } catch (error) {
       if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(

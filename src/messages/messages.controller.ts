@@ -74,13 +74,7 @@ export class MessagesController {
     } else {
       return await this.redisService.getOrSetCache(
         `messages?chatId=${chatId}`,
-        async () =>
-          await this.messagesService.getAllMessages(
-            userId,
-            chatId,
-            cursor,
-            limit,
-          ),
+        this.messagesService.getAllMessages(userId, chatId, cursor, limit),
       );
     }
   }

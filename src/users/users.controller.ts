@@ -49,7 +49,7 @@ export class UsersController {
   @UseGuards(JwtGuard)
   @Get(':id')
   async getUser(@Param('id') id: string) {
-    return await this.usersService.getUserById(new Types.ObjectId(id));
+    return this.usersService.getUserById(new Types.ObjectId(id));
   }
 
   @ApiBearerAuth()
@@ -70,10 +70,7 @@ export class UsersController {
     @Param('displayName') displayName: string,
     @GetUser('_id') currentUserId: Types.ObjectId,
   ) {
-    return await this.usersService.getUserByDisplayName(
-      displayName,
-      currentUserId,
-    );
+    return this.usersService.getUserByDisplayName(displayName, currentUserId);
   }
 
   @ApiBearerAuth()
@@ -94,7 +91,7 @@ export class UsersController {
     @GetUser('_id') _id: Types.ObjectId,
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    return await this.usersService.updateUser(_id, updateUserDto);
+    return this.usersService.updateUser(_id, updateUserDto);
   }
 
   @ApiBearerAuth()
@@ -127,7 +124,7 @@ export class UsersController {
     @GetUser() user: User,
     @Body() updateAvatarDto: ChangeAvatarDto,
   ) {
-    return await this.usersService.changeAvatar(user, updateAvatarDto);
+    return this.usersService.changeAvatar(user, updateAvatarDto);
   }
 
   @ApiBearerAuth()
@@ -159,7 +156,7 @@ export class UsersController {
     @GetUser() user: User,
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
-    return await this.usersService.changePassword(user, changePasswordDto);
+    return this.usersService.changePassword(user, changePasswordDto);
   }
 
   @ApiBearerAuth()
@@ -193,6 +190,6 @@ export class UsersController {
     @GetUser() user: User,
     @Body() deleteUserDto: DeleteUserDto,
   ) {
-    return await this.usersService.deleteUser(user, deleteUserDto);
+    return this.usersService.deleteUser(user, deleteUserDto);
   }
 }

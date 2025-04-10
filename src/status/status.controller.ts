@@ -2,7 +2,6 @@ import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { StatusService } from './status.service';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { UpdateStatusDto } from './dto/UpdateStatus.dto';
-import { Types } from 'mongoose';
 import {
   ApiBearerAuth,
   ApiInternalServerErrorResponse,
@@ -39,7 +38,7 @@ export class StatusController {
   @UseGuards(JwtGuard)
   @Get(':userId')
   async getUserStatus(@Param('userId') userId: string) {
-    return await this.statusService.getUserStatus(userId);
+    return this.statusService.getUserStatus(userId);
   }
 
   @ApiBearerAuth()
@@ -61,6 +60,6 @@ export class StatusController {
     @GetUser() user: User,
     @Body() updateStatusDto: UpdateStatusDto,
   ) {
-    return await this.statusService.updateStatus(user, updateStatusDto);
+    return this.statusService.updateStatus(user, updateStatusDto);
   }
 }

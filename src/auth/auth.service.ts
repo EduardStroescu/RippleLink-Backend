@@ -4,11 +4,10 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { CreateUserDto, LoginUserDto } from './dto';
-import { JwtService } from '@nestjs/jwt';
+import { JsonWebTokenError, JwtService, TokenExpiredError } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -66,7 +65,7 @@ export class AuthService {
       newUser.status = status._id;
       newUser = await newUser.save();
 
-      const tokens = await this.signTokens(newUser._id, newUser.email);
+      const tokens = this.signTokens(newUser._id, newUser.email);
       await this.updateRefreshToken(newUser._id, tokens.refresh_token);
 
       newUser = (await newUser.populate('status'))?.toObject();
@@ -80,7 +79,7 @@ export class AuthService {
       } else {
         if (error instanceof HttpException) throw error;
         throw new InternalServerErrorException(
-          'An error occurred while registering new user',
+          'An error occurred during the registration process. Please try again later!',
         );
       }
     }
@@ -103,7 +102,10 @@ export class AuthService {
           .exec()
       )?.toObject();
 
-      if (!user) throw new NotFoundException('No user exists with this email');
+      if (!user)
+        throw new UnauthorizedException(
+          'Invalid credentials. Please check your email and password.',
+        );
 
       const isPasswordValid = await bcrypt.compare(
         loginUserDto.password,
@@ -111,9 +113,11 @@ export class AuthService {
       );
 
       if (!isPasswordValid)
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException(
+          'Invalid credentials. Please check your email and password.',
+        );
 
-      const tokens = await this.signTokens(user._id, user.email);
+      const tokens = this.signTokens(user._id, user.email);
       await this.updateRefreshToken(user._id, tokens.refresh_token);
 
       const strippedUser = stripUserOfSensitiveData(user);
@@ -124,7 +128,7 @@ export class AuthService {
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw new InternalServerErrorException(
-        'An error occurred while logging the user in',
+        'An error occurred while logging the user in. Please try again later!',
       );
     }
   }
@@ -145,14 +149,14 @@ export class AuthService {
 
       if (!user || user.refresh_token !== refreshToken)
         throw new UnauthorizedException(
-          'Invalid refresh token, please log in again!',
+          'Invalid session, please log in again!',
         );
 
       const payload = this.jwtService.verify(refreshToken, {
         secret: this.configService.get<string>('REFRESH_SECRET'),
       });
 
-      const { access_token, refresh_token } = await this.signTokens(
+      const { access_token, refresh_token } = this.signTokens(
         payload.sub,
         payload.email,
       );
@@ -165,8 +169,17 @@ export class AuthService {
       };
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new UnauthorizedException(
-        'Invalid refresh token, please log in again!',
+      if (err instanceof TokenExpiredError)
+        throw new UnauthorizedException(
+          'Session expired, please log in again!',
+        );
+      if (err instanceof JsonWebTokenError)
+        throw new UnauthorizedException(
+          'Invalid session, please log in again!',
+        );
+
+      throw new InternalServerErrorException(
+        'An internal error occurred. Please log in again!',
       );
     }
   }
@@ -176,10 +189,7 @@ export class AuthService {
     return { success: 'Logged out' };
   }
 
-  private async signTokens(
-    userId: Types.ObjectId,
-    email: string,
-  ): Promise<{ access_token: string; refresh_token: string }> {
+  private signTokens(userId: Types.ObjectId, email: string) {
     const payload = {
       sub: userId,
       email,
@@ -188,7 +198,7 @@ export class AuthService {
     const refreshSecret = this.configService.get('REFRESH_SECRET');
 
     const access_token = this.jwtService.sign(payload, {
-      expiresIn: '15m',
+      expiresIn: '1m',
       secret: accessSecret,
     });
     const refresh_token = this.jwtService.sign(payload, {

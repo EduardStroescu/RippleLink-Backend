@@ -87,7 +87,7 @@ export class MessagesService {
     content: Message['content'],
     type: 'text' | 'file' | 'event',
   ): Promise<{ newMessage: Message; newChat: Chat }> {
-    if (!chatId || !userId || !content) {
+    if (!chatId || !content || !type) {
       throw new BadRequestException('Invalid input');
     }
     try {
@@ -180,7 +180,7 @@ export class MessagesService {
     chatId: Types.ObjectId,
     content: Message['content'],
   ): Promise<{ updatedMessage: Message; updatedChat: Chat | null }> {
-    if (!messageId || !userId || !chatId || !content)
+    if (!messageId || !chatId || !content)
       throw new BadRequestException('Invalid input');
 
     try {
@@ -254,7 +254,7 @@ export class MessagesService {
     userId: Types.ObjectId,
     chatId: Types.ObjectId,
   ): Promise<{ deletedMessage: Message; updatedChat: Chat }> {
-    if (!messageId || !userId || !chatId) {
+    if (!messageId || !chatId) {
       throw new Error('Invalid input');
     }
 
@@ -348,6 +348,8 @@ export class MessagesService {
   }
 
   async readMessage(userId: Types.ObjectId, chatId: Types.ObjectId) {
+    if (!chatId) throw new BadRequestException('Invalid input');
+
     try {
       let chat = await this.chatsModel.findById(chatId).exec();
       if (!chat) throw new NotFoundException('Chat not found');

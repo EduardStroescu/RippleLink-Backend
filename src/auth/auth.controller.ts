@@ -16,7 +16,6 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiInternalServerErrorResponse,
-  ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -41,7 +40,8 @@ export class AuthController {
   })
   @ApiConflictResponse({ description: 'Email already in use', status: 409 })
   @ApiInternalServerErrorResponse({
-    description: 'An error occurred while registering new user',
+    description:
+      'An error occurred during the registration process. Please try again later!',
   })
   @ApiBadGatewayResponse({
     description: 'Cloudinary Error',
@@ -57,14 +57,12 @@ export class AuthController {
     description: 'Logged in successfully',
     type: PrivateUserDto,
   })
-  @ApiNotFoundResponse({
-    description: 'No user exists with this email',
-  })
   @ApiInternalServerErrorResponse({
-    description: 'An error occurred while logging the user in',
+    description:
+      'An error occurred while logging the user in. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid credentials',
+    description: 'Invalid credentials. Please check your email and password.',
     status: 401,
   })
   @HttpCode(HttpStatus.OK)
@@ -79,8 +77,11 @@ export class AuthController {
     type: PrivateUserDto,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid refresh token, please log in again!',
+    description: 'Invalid or expired session, please log in again!',
     status: 401,
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'An internal error occurred. Please log in again!',
   })
   @HttpCode(HttpStatus.OK)
   @Post('refresh')

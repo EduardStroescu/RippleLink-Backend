@@ -59,7 +59,7 @@ export class ChatsController {
   async getAllChats(@GetUser() user: User) {
     return await this.redisService.getOrSetCache(
       `chats?userId=${user._id.toString()}`,
-      async () => this.chatsService.getAllChats(user),
+      this.chatsService.getAllChats(user),
     );
   }
 
@@ -90,7 +90,10 @@ export class ChatsController {
       createChatDto,
     );
 
-    await this.gatewayService.createChat(newChat, wasExistingChat);
+    await this.gatewayService.createOrUpdateChat(newChat, {
+      type: 'create',
+      existingChat: wasExistingChat,
+    });
     return newChat;
   }
 
@@ -119,7 +122,7 @@ export class ChatsController {
     @GetUser('_id') userId: Types.ObjectId,
     @Param('chatId') chatId: string,
   ) {
-    return await this.chatsService.getSharedFiles(userId, chatId);
+    return this.chatsService.getSharedFiles(userId, chatId);
   }
 
   @ApiBearerAuth()
@@ -152,7 +155,9 @@ export class ChatsController {
       chatId,
       updateChatDto,
     );
-    await this.gatewayService.updateChat(updatedChat, 'update');
+    await this.gatewayService.createOrUpdateChat(updatedChat, {
+      type: 'update',
+    });
     return updatedChat;
   }
 
@@ -186,8 +191,7 @@ export class ChatsController {
   async deleteChat(@GetUser() user: User, @Param('chatId') chatId: string) {
     await this.redisService.deleteFromCache(
       `chats?userId=${user._id.toString()}`,
-      async () =>
-        this.chatsService.deleteChat(user, new Types.ObjectId(chatId)),
+      this.chatsService.deleteChat(user, new Types.ObjectId(chatId)),
     );
 
     return { message: 'Chat deleted successfully' };

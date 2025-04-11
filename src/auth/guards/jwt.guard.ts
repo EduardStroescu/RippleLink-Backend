@@ -12,12 +12,12 @@ export class JwtGuard extends AuthGuard('jwt') {
   getRequest(context: ExecutionContext) {
     if (context.getType() === 'ws') {
       const client = context.switchToWs().getClient();
-      const token = client.handshake?.headers['authorization'];
+      const token = client.handshake?.headers?.authorization;
 
       // Mock a request object Passport expects
       return {
         headers: {
-          authorization: `Bearer ${token}`,
+          authorization: token,
         },
       };
     }

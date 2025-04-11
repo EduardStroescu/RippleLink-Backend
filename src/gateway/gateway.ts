@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JsonWebTokenError, JwtService, TokenExpiredError } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
@@ -38,7 +38,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   async handleConnection(@ConnectedSocket() socket: Socket) {
-    const token = socket.handshake.headers['authorization'];
+    const token = socket.handshake.headers.authorization;
     const { _id } = socket.handshake.query;
 
     if (!token) {
@@ -48,7 +48,7 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      this.jwtService.verify(token, {
+      this.jwtService.verify(token.split(' ')[1], {
         secret: this.configService.get<string>('ACCESS_SECRET'),
       });
       await this.redisService.connectUser(_id as string);
@@ -59,21 +59,30 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
     } catch (err) {
-      this.handleError(socket, 'Failed to connect');
-      socket.disconnect();
+      if (
+        err instanceof TokenExpiredError ||
+        err instanceof JsonWebTokenError
+      ) {
+        this.handleError(socket, 'Failed to connect');
+        socket.disconnect();
+      }
     }
   }
 
   async handleDisconnect(@ConnectedSocket() socket: Socket) {
     const { _id } = socket.handshake.query;
 
-    await this.redisService.disconnectUser(_id as string);
-    this.server.emit('broadcastUserStatus', {
-      content: {
-        _id: _id,
-        isOnline: false,
-      },
-    });
+    try {
+      await this.redisService.disconnectUser(_id as string);
+      this.server.emit('broadcastUserStatus', {
+        content: {
+          _id: _id,
+          isOnline: false,
+        },
+      });
+    } catch (err) {
+      // ignore error
+    }
   }
 
   @UseGuards(JwtGuard)
@@ -87,7 +96,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.join(room);
   }
 
-  @UseGuards(JwtGuard)
   @SubscribeMessage('leaveRoom')
   handleLeaveRoom(
     @ConnectedSocket() client: Socket,
@@ -309,7 +317,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @UseGuards(JwtGuard)
   @SubscribeMessage('sendCallEvent')
   async sendCallEvent(
     @MessageBody()
@@ -347,7 +354,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @UseGuards(JwtGuard)
   @SubscribeMessage('saveIceCandidates')
   async saveIceCandidates(
     @MessageBody()
@@ -429,7 +435,6 @@ export class Gateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { status: 'success' };
   }
 
-  @UseGuards(JwtGuard)
   @SubscribeMessage('sendChunkedFile')
   async sendChunkedFile(
     @MessageBody()

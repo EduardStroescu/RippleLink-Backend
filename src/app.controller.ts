@@ -1,7 +1,7 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { join } from 'path';
-import * as fs from 'fs';
+import { promises as fs } from 'fs';
 import {
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -28,19 +28,15 @@ export class AppController {
   async getServerStatus(@Res() res: Response) {
     try {
       const filePath = join(process.cwd(), 'client', 'index.html');
-
-      // Check if the file exists
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).send('HTML file not found');
-      }
+      const html = await fs.readFile(filePath, 'utf-8');
 
       // Set the appropriate headers
       res.setHeader('Content-Type', 'text/html');
 
-      // Read and send the file
-      fs.createReadStream(filePath).pipe(res);
+      // Send the file
+      res.send(html);
     } catch (error) {
-      throw new Error('Internal Server Error');
+      res.status(500).send('Internal Server Error');
     }
   }
 }

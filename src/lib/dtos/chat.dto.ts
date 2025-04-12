@@ -10,17 +10,17 @@ export class ChatDto {
   _id: string;
 
   @ApiProperty({
-    description: 'Chat name',
+    description:
+      'The name of the chat given my users or automatically generated.',
     type: String,
   })
   name: string;
 
   @ApiProperty({
     description: 'Chat type',
-    type: String,
-    enum: ['dm', 'group'],
+    oneOf: [{ type: 'string', enum: ['dm', 'group'] }],
   })
-  type: ['dm', 'group'];
+  type: 'dm' | 'group';
 
   @ApiProperty({
     description: 'List of users in the chat',

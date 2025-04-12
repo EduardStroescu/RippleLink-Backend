@@ -2,7 +2,6 @@ import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { StatusService } from './status.service';
 import { GetUser } from 'src/auth/decorator/GetUser.decorator';
 import { UpdateStatusDto } from './dto/UpdateStatus.dto';
-import { Types } from 'mongoose';
 import {
   ApiBearerAuth,
   ApiInternalServerErrorResponse,
@@ -13,6 +12,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtGuard } from 'src/auth/guards';
 import { StatusDto } from 'src/lib/dtos/status.dto';
+import { User } from 'schemas/User.schema';
 
 @ApiTags('Status')
 @Controller('status')
@@ -29,7 +29,7 @@ export class StatusController {
     description: 'User status not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to get user status',
+    description: 'Unable to get user status. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -38,7 +38,7 @@ export class StatusController {
   @UseGuards(JwtGuard)
   @Get(':userId')
   async getUserStatus(@Param('userId') userId: string) {
-    return await this.statusService.getUserStatus(userId);
+    return this.statusService.getUserStatus(userId);
   }
 
   @ApiBearerAuth()
@@ -48,7 +48,7 @@ export class StatusController {
     type: StatusDto,
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to update status',
+    description: 'Unable to update status. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -57,9 +57,9 @@ export class StatusController {
   @UseGuards(JwtGuard)
   @Patch()
   async updateStatus(
-    @GetUser('_id') _id: Types.ObjectId,
+    @GetUser() user: User,
     @Body() updateStatusDto: UpdateStatusDto,
   ) {
-    return await this.statusService.updateStatus(_id, updateStatusDto);
+    return this.statusService.updateStatus(user, updateStatusDto);
   }
 }

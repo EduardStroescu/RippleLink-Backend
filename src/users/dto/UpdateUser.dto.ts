@@ -11,7 +11,7 @@ export default class UpdateUserDto {
   email?: string;
 
   @ApiPropertyOptional({
-    description: 'User First Name.',
+    description: 'User First Name',
     type: String,
   })
   @IsOptional()
@@ -19,7 +19,7 @@ export default class UpdateUserDto {
   firstName?: string;
 
   @ApiPropertyOptional({
-    description: 'User Last Name..',
+    description: 'User Last Name',
     type: String,
   })
   @IsOptional()
@@ -27,7 +27,7 @@ export default class UpdateUserDto {
   lastName?: string;
 
   @ApiPropertyOptional({
-    description: 'User Display Name will be shown to other users.',
+    description: 'User Display Name. Will be visible to other users.',
     type: String,
   })
   @IsOptional()

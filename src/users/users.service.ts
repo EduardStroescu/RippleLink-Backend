@@ -11,12 +11,12 @@ import { Model, Types } from 'mongoose';
 import { User } from 'schemas/User.schema';
 import UpdateUserDto from './dto/UpdateUser.dto';
 import { Status } from 'schemas/Status.schema';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { Settings } from 'schemas/Settings.schema';
 import { DeleteUserDto } from './dto/DeleteUser.dto';
 import * as bcrypt from 'bcrypt';
 import { ChangePasswordDto } from './dto/ChangePassword.dto';
 import ChangeAvatarDto from './dto/ChangeAvatar.dto';
+import { FileUploaderService } from 'src/fileUploader/fileUploader.provider';
 
 @Injectable()
 export class UsersService {
@@ -24,19 +24,26 @@ export class UsersService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Status.name) private statusModel: Model<Status>,
     @InjectModel(Settings.name) private settingsModel: Model<Settings>,
-    private readonly cloudinaryService: CloudinaryService,
+    private readonly fileUploaderService: FileUploaderService,
   ) {}
 
   async getUserById(userId: Types.ObjectId) {
     try {
-      return await this.userModel
+      const user = await this.userModel
         .findById(userId)
         .select(
           '-password -firstName -lastName -email -refresh_token -createdAt -updatedAt -isDeleted',
         )
         .exec();
+
+      if (!user) throw new NotFoundException('User not found');
+
+      return user;
     } catch (err) {
-      throw new NotFoundException('User not found');
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException(
+        'An unexpected error occurred. Please try again later!',
+      );
     }
   }
 
@@ -46,7 +53,7 @@ export class UsersService {
   ) {
     try {
       const regex = new RegExp(displayName, 'i');
-      return await this.userModel
+      const user = await this.userModel
         .find({
           displayName: { $regex: regex },
           isDeleted: { $ne: true },
@@ -56,8 +63,14 @@ export class UsersService {
           '-password -settings -firstName -lastName -email -refresh_token -createdAt -updatedAt -status -isDeleted',
         )
         .exec();
+      if (!user) throw new NotFoundException('User not found');
+
+      return user;
     } catch (err) {
-      throw new NotFoundException('User not found');
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException(
+        'An unexpected error occurred. Please try again later!',
+      );
     }
   }
 
@@ -67,108 +80,119 @@ export class UsersService {
         const user = await this.userModel
           .findOne({ email: updateUserDto.email })
           .exec();
-        if (user) throw new BadRequestException('Email already exists');
+        if (user) throw new BadRequestException('Email address already in use');
       }
-      return await this.userModel
-        .findByIdAndUpdate(_id, updateUserDto, {
-          new: true,
-        })
-        .select('-password -isDeleted')
-        .exec();
+
+      return (
+        await this.userModel
+          .findByIdAndUpdate(_id, updateUserDto, {
+            new: true,
+          })
+          .select('-password -isDeleted')
+          .populate('settings status')
+          .exec()
+      )?.toObject();
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException("Couldn't update user");
+      throw new InternalServerErrorException(
+        'An unexpected error occurred. Please try again later!',
+      );
     }
   }
 
   async changeAvatar(user: User, changeAvatarDto: ChangeAvatarDto) {
     try {
-      const currentAvatar = user.avatarUrl;
-      if (currentAvatar) {
-        await this.cloudinaryService.removeFile(`${user.email}-avatar`);
-      }
-      const newUserAvatar = await this.cloudinaryService.uploadAvatar(
-        changeAvatarDto.avatar,
-        user.email,
+      const newUserAvatar = await this.fileUploaderService.uploadBase64File(
+        'avatar',
+        user._id.toString(),
+        { base64String: changeAvatarDto.avatar },
       );
-      user.avatarUrl = newUserAvatar.secure_url;
+      user.avatarUrl = newUserAvatar;
       await user.save();
 
-      return { avatarUrl: newUserAvatar.secure_url };
+      return { avatarUrl: newUserAvatar };
     } catch (err) {
-      throw new InternalServerErrorException(err);
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException(
+        'Unable to change avatar. Please try again later!',
+      );
     }
   }
 
   async changePassword(user: User, changePasswordDto: ChangePasswordDto) {
     try {
-      if (changePasswordDto.currentPassword !== user.password)
-        throw new UnauthorizedException('Invalid password');
+      if (
+        changePasswordDto.newPassword !== changePasswordDto.confirmNewPassword
+      )
+        throw new BadRequestException(
+          'New password and its confirmation do not match',
+        );
 
       const isPasswordValid = await bcrypt.compare(
-        changePasswordDto.newPassword,
+        changePasswordDto.currentPassword,
         user.password,
       );
       if (!isPasswordValid) throw new UnauthorizedException('Invalid password');
 
-      await this.userModel.findByIdAndUpdate(
-        user._id,
-        { password: changePasswordDto.newPassword },
-        {
-          new: true,
-        },
+      const hashedPassword = await bcrypt.hash(
+        changePasswordDto.newPassword,
+        10,
       );
+
+      user.password = hashedPassword;
+      await user.save();
       return { success: 'Password changed' };
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException("Couldn't change password");
+      throw new InternalServerErrorException(
+        'An unexpected error occurred. Please try again later!',
+      );
     }
   }
 
-  async deleteUser(_id: Types.ObjectId, deleteUserDto: DeleteUserDto) {
+  async deleteUser(user: User, deleteUserDto: DeleteUserDto) {
     try {
-      const deletedUser = await this.userModel
-        .findById(_id)
-        .populate<{ settings: Settings }>({
-          path: 'settings',
-        })
-        .exec();
       if (
         deleteUserDto.currentPassword !== deleteUserDto.confirmCurrentPassword
       )
-        throw new UnauthorizedException('Passwords do not match');
+        throw new BadRequestException('Passwords do not match');
 
-      const isPasswordValid = await bcrypt.compare(
-        deleteUserDto.currentPassword,
-        deletedUser.password,
-      );
+      const [deletedUser, isPasswordValid] = await Promise.all([
+        user.populate<{ settings: Settings }>({
+          path: 'settings',
+        }),
+        bcrypt.compare(deleteUserDto.currentPassword, user.password),
+      ]);
+
       if (!isPasswordValid) throw new UnauthorizedException('Invalid password');
 
       if (deletedUser.avatarUrl) {
-        const publicId = deletedUser.avatarUrl.split('/').pop().split('.')[0];
-        await this.cloudinaryService.removeFile(publicId);
+        this.fileUploaderService.removeFiles(
+          `${deletedUser._id}-files/${deletedUser.avatarUrl.split('/').pop()}`,
+        );
       }
       if (deletedUser.settings && deletedUser.settings.backgroundImage) {
-        const publicId = deletedUser.settings.backgroundImage
-          .split('/')
-          .pop()
-          .split('.')[0];
-        await this.cloudinaryService.removeFile(publicId);
+        this.fileUploaderService.removeFiles(
+          `${deletedUser._id}-files/${deletedUser.settings.backgroundImage.split('/').pop()}`,
+        );
       }
-      await deletedUser.updateOne({
-        displayName: 'User',
-        firstName: null,
-        lastName: null,
-        email: null,
-        password: null,
-        avatarUrl: null,
-        refresh_token: null,
-        status: null,
-        settings: null,
-        isDeleted: true,
-      });
-      await this.statusModel.deleteOne({ userId: _id });
-      await this.settingsModel.deleteOne({ userId: _id });
+      await Promise.all([
+        deletedUser.updateOne({
+          displayName: 'User',
+          firstName: null,
+          lastName: null,
+          email: null,
+          password: null,
+          avatarUrl: null,
+          refresh_token: null,
+          status: null,
+          settings: null,
+          isDeleted: true,
+        }),
+        this.statusModel.deleteOne({ userId: deletedUser._id }),
+        this.settingsModel.deleteOne({ userId: deletedUser._id }),
+      ]);
+
       return { success: 'User deleted' };
     } catch (err) {
       if (err instanceof HttpException) throw err;

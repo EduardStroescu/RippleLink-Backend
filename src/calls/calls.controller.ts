@@ -1,7 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiInternalServerErrorResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -20,11 +19,10 @@ export class CallsController {
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    description: 'Retrieved all calls successfully',
-    type: [CallDto],
-  })
-  @ApiInternalServerErrorResponse({
-    description: "Couldn't to retrieve calls",
+    description:
+      'Retrieved all calls successfully. An empty array is returned if no calls are found.',
+    type: CallDto,
+    isArray: true,
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',

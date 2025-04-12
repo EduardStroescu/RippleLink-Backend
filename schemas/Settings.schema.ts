@@ -20,7 +20,7 @@ import { Document, Types } from 'mongoose';
 export class Settings extends Document {
   _id: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   userId: Types.ObjectId;
 
   @Prop({ required: false })

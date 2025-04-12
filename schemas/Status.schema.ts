@@ -18,7 +18,12 @@ import mongoose, { Document, Types } from 'mongoose';
 export class Status extends Document {
   _id: Types.ObjectId;
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   userId: Types.ObjectId;
 
   @Prop({ type: Boolean, default: false })

@@ -24,8 +24,11 @@ export class StatusService {
 
   async getUserStatus(userId: string) {
     try {
-      const status = await this.statusModel.findOne({ userId }).exec();
+      const status = (
+        await this.statusModel.findOne({ userId }).exec()
+      )?.toObject();
       if (!status) throw new NotFoundException('User status not found');
+
       const isUserOnline = await this.redisService.isUserOnline(userId);
       if (isUserOnline) {
         status.online = true;
@@ -33,68 +36,78 @@ export class StatusService {
         status.online = false;
       }
 
-      return status.toObject();
+      return status;
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException('Unable to get user status');
+      throw new InternalServerErrorException(
+        'Unable to get user status. Please try again later!',
+      );
     }
   }
 
   async createStatus(userId: Types.ObjectId) {
     try {
-      const updatedStatus = new this.statusModel({
-        userId,
-        lastSeen: new Date(),
-      });
-      return await updatedStatus.save();
+      const updatedStatus = (
+        await this.statusModel.create({
+          userId,
+          lastSeen: new Date(),
+        })
+      )?.toObject();
+
+      return updatedStatus;
     } catch (err) {
-      throw new InternalServerErrorException('Unable to create status');
+      throw new InternalServerErrorException(
+        'Unable to create status. Please try again later!',
+      );
     }
   }
 
-  async updateStatus(_id: Types.ObjectId, updateStatusDto: UpdateStatusDto) {
+  async updateStatus(user: User, updateStatusDto: UpdateStatusDto) {
     try {
-      const user = await this.userModel
-        .findById(_id)
-        .populate({ path: 'status' })
-        .exec();
-
       let newStatus: Status;
       if (user.status) {
-        newStatus = await this.statusModel.findByIdAndUpdate(
-          user.status._id,
-          updateStatusDto,
-          { new: true },
-        );
+        newStatus = (
+          await this.statusModel.findByIdAndUpdate(
+            user.status,
+            updateStatusDto,
+            { new: true },
+          )
+        )?.toObject();
       } else {
-        newStatus = new this.statusModel({
-          userId: user._id,
-          ...updateStatusDto,
-        });
-        newStatus = await newStatus.save();
+        newStatus = (
+          await this.statusModel.create({
+            userId: user._id,
+            ...updateStatusDto,
+          })
+        )?.toObject();
+        user.status = newStatus._id;
+        await user.save();
       }
-      user.status = newStatus._id;
-      await user.save();
-      return newStatus.toObject();
+      return newStatus;
     } catch (err) {
-      throw new InternalServerErrorException('Unable to update status');
+      throw new InternalServerErrorException(
+        'Unable to update status. Please try again later!',
+      );
     }
   }
 
   async disconnectUser(userId: Types.ObjectId) {
     try {
-      const user = await this.userModel.findById(userId).populate('status');
+      const user = await this.userModel.findById(userId);
 
       if (!user) {
         throw new Error('User not found');
       }
 
-      const updatedStatus = await this.statusModel
-        .findByIdAndUpdate(user.status, { lastSeen: new Date() }, { new: true })
-        .exec();
-
-      user.status = updatedStatus._id;
-      await user.save();
+      const updatedStatus = (
+        await this.statusModel
+          .findByIdAndUpdate(
+            user.status,
+            { lastSeen: new Date() },
+            { new: true },
+          )
+          .exec()
+      )?.toObject();
 
       return updatedStatus;
     } catch (err) {

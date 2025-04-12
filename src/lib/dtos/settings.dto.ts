@@ -14,20 +14,20 @@ export class SettingsDto {
   userId: string;
 
   @ApiPropertyOptional({
-    description: 'Chat background image as base64 encoded string',
+    description: 'Chat background image url.',
     type: String,
   })
   backgroundImage?: string;
 
   @ApiPropertyOptional({
-    description: 'Chat glow color in RGBA format',
+    description: 'Chat glow color in RGBA format.',
     type: String,
     example: 'rgba(0,255,227,1)',
   })
   glowColor?: string;
 
   @ApiPropertyOptional({
-    description: 'Chat tint color in RGBA format',
+    description: 'Chat tint color in RGBA format.',
     type: String,
     example: 'rgba(0,255,227,1)',
   })

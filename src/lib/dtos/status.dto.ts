@@ -2,22 +2,22 @@ import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 
 export class StatusDto {
   @ApiProperty({
-    description: 'User online status',
+    description: 'Current user status.',
     type: Boolean,
   })
   online: boolean;
 
   @ApiPropertyOptional({
-    description: 'Status message',
+    description: 'Status message.',
     type: String,
   })
   statusMessage?: string;
 
   @ApiProperty({
-    description: 'Last time the user was seen',
-    type: Date,
+    description: 'Last time the user was seen.',
+    type: String,
   })
-  lastSeen: Date;
+  lastSeen: string;
 }
 
 export class StatusMessageDto extends PickType(StatusDto, [

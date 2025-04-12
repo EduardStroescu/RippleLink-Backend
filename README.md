@@ -6,12 +6,12 @@
 
 ### Links to the Frontend:
 
-https://github.com/EduardStroescu/RippleLink-Frontend - Github Repo
+https://github.com/EduardStroescu/RippleLink-Frontend - Github Repo<br>
 https://ripple-link.vercel.app - Live Demo
 
 ### Links to backend main page and swagger documentation:
 
-https://ripple-link.koyeb.app - Live Demo
+https://ripple-link.koyeb.app - Live Demo<br>
 https://ripple-link.koyeb.app/api/docs - Swagger Documentation
 
 # Introduction

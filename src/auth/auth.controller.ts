@@ -10,11 +10,12 @@ import {
 import { AuthService } from './auth.service';
 import { CreateUserDto, LoginUserDto, RefreshTokenDto } from './dto';
 import {
+  ApiBadGatewayResponse,
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiInternalServerErrorResponse,
-  ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -34,10 +35,17 @@ export class AuthController {
     description: 'User Created',
     type: PrivateUserDto,
   })
-  @ApiInternalServerErrorResponse({
-    description: 'An error occurred while registering new user',
+  @ApiBadRequestResponse({
+    description: 'Password and its confirmation do not match',
   })
-  @ApiConflictResponse({ description: 'User already Exists', status: 401 })
+  @ApiConflictResponse({ description: 'Email already in use', status: 409 })
+  @ApiInternalServerErrorResponse({
+    description:
+      'An error occurred during the registration process. Please try again later!',
+  })
+  @ApiBadGatewayResponse({
+    description: 'Cloudinary Error',
+  })
   @HttpCode(HttpStatus.CREATED)
   @Post('register')
   async register(@Body() createUserDto: CreateUserDto) {
@@ -49,15 +57,12 @@ export class AuthController {
     description: 'Logged in successfully',
     type: PrivateUserDto,
   })
-  @ApiNotFoundResponse({
-    description: 'User not found',
-    status: 404,
-  })
   @ApiInternalServerErrorResponse({
-    description: 'An error occurred while logging the user in',
+    description:
+      'An error occurred while logging the user in. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid credentials',
+    description: 'Invalid credentials. Please check your email and password.',
     status: 401,
   })
   @HttpCode(HttpStatus.OK)
@@ -72,8 +77,11 @@ export class AuthController {
     type: PrivateUserDto,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid refresh token, please log in again',
+    description: 'Invalid or expired session, please log in again!',
     status: 401,
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'An internal error occurred. Please log in again!',
   })
   @HttpCode(HttpStatus.OK)
   @Post('refresh')

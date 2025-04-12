@@ -3,7 +3,7 @@ import { IsString } from 'class-validator';
 
 export class UpdateStatusDto {
   @ApiProperty({
-    description: 'The status message of the user',
+    description: 'The status message of the user.',
     type: String,
   })
   @IsString()

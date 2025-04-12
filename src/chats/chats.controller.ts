@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiInternalServerErrorResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -47,7 +48,7 @@ export class ChatsController {
     type: [ChatDto],
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to retrieve chats',
+    description: 'Unable to retrieve chats. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid JWT bearer access token',
@@ -58,7 +59,7 @@ export class ChatsController {
   async getAllChats(@GetUser() user: User) {
     return await this.redisService.getOrSetCache(
       `chats?userId=${user._id.toString()}`,
-      async () => this.chatsService.getAllChats(user),
+      this.chatsService.getAllChats(user),
     );
   }
 
@@ -67,14 +68,14 @@ export class ChatsController {
     description: 'Chat created successfully',
     type: ChatDto,
   })
-  @ApiBadRequestResponse({
+  @ApiNotFoundResponse({
     description: 'One or more users not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to create chat',
+    description: 'Unable to create chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description: 'Invalid JWT bearer access token or not',
     status: 401,
   })
   @UseGuards(JwtGuard)
@@ -89,27 +90,39 @@ export class ChatsController {
       createChatDto,
     );
 
-    await this.gatewayService.createChat(userId, newChat, wasExistingChat);
+    await this.gatewayService.createOrUpdateChat(newChat, {
+      type: 'create',
+      existingChat: wasExistingChat,
+    });
     return newChat;
   }
 
   @ApiBearerAuth()
   @ApiOkResponse({
     status: 200,
-    description: 'Shared files retrieved successfully',
-    type: [MessageDto],
+    description:
+      'Shared files retrieved successfully. Returns an empty array if no files are found.',
+    type: MessageDto,
+    isArray: true,
+  })
+  @ApiNotFoundResponse({
+    description: 'Chat not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to retrieve shared files',
+    description: 'Unable to retrieve shared files. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description:
+      'Invalid JWT bearer access token or you are not a member of the chat.',
     status: 401,
   })
   @UseGuards(JwtGuard)
   @Get('sharedFiles/:chatId')
-  async getSharedFiles(@Param('chatId') chatId: string) {
-    return await this.chatsService.getSharedFiles(chatId);
+  async getSharedFiles(
+    @GetUser('_id') userId: Types.ObjectId,
+    @Param('chatId') chatId: string,
+  ) {
+    return this.chatsService.getSharedFiles(userId, chatId);
   }
 
   @ApiBearerAuth()
@@ -118,28 +131,33 @@ export class ChatsController {
     description: 'Chat updated successfully',
     type: ChatDto,
   })
-  @ApiBadRequestResponse({
+  @ApiBadRequestResponse({ description: 'Invalid chat id provided' })
+  @ApiNotFoundResponse({
     description: 'Chat not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to update chat',
+    description: 'Unable to update chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description: 'Invalid JWT bearer access token or not a member of the chat',
     status: 401,
   })
   @UseGuards(JwtGuard)
   @HttpCode(HttpStatus.OK)
   @Patch(':chatId')
   async updateChat(
+    @GetUser('_id') userId: Types.ObjectId,
     @Param('chatId') chatId: string,
     @Body() updateChatDto: UpdateChatDto,
   ) {
     const updatedChat = await this.chatsService.updateChat(
+      userId,
       chatId,
       updateChatDto,
     );
-    await this.gatewayService.updateChat(updatedChat, 'update');
+    await this.gatewayService.createOrUpdateChat(updatedChat, {
+      type: 'update',
+    });
     return updatedChat;
   }
 
@@ -157,14 +175,15 @@ export class ChatsController {
       },
     },
   })
-  @ApiBadRequestResponse({
-    description: 'Chat not found or you are not a member of this chat',
+  @ApiNotFoundResponse({
+    description: 'Chat not found',
   })
   @ApiInternalServerErrorResponse({
-    description: 'Unable to delete chat',
+    description: 'Unable to delete chat. Please try again later!',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid JWT bearer access token',
+    description:
+      'Invalid JWT bearer access token or you are not a member of this chat',
     status: 401,
   })
   @UseGuards(JwtGuard)
@@ -172,8 +191,7 @@ export class ChatsController {
   async deleteChat(@GetUser() user: User, @Param('chatId') chatId: string) {
     await this.redisService.deleteFromCache(
       `chats?userId=${user._id.toString()}`,
-      async () =>
-        this.chatsService.deleteChat(user, new Types.ObjectId(chatId)),
+      this.chatsService.deleteChat(user, new Types.ObjectId(chatId)),
     );
 
     return { message: 'Chat deleted successfully' };

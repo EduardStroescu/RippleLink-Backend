@@ -20,10 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: { sub: number; email: string }) {
-    const user = await this.userModel
-      .findById(payload.sub)
-      .populate({ path: 'chats' })
-      .exec();
+    const user = await this.userModel.findById(payload.sub).exec();
     if (!user)
       throw new UnauthorizedException('Invalid JWT bearer access token');
 

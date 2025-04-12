@@ -28,7 +28,12 @@ export class Chat extends Document {
 
   @Prop({
     type: [
-      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true,
+      },
     ],
   })
   users: Types.ObjectId[];

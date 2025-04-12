@@ -12,6 +12,7 @@ import { UsersService } from './users.service';
 import UpdateUserDto from './dto/UpdateUser.dto';
 import { JwtGuard } from 'src/auth/guards';
 import {
+  ApiBadGatewayResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiInternalServerErrorResponse,
@@ -42,10 +43,13 @@ export class UsersController {
     status: 401,
     description: 'Invalid JWT bearer access token',
   })
+  @ApiInternalServerErrorResponse({
+    description: 'An unexpected error occurred. Please try again later!',
+  })
   @UseGuards(JwtGuard)
   @Get(':id')
   async getUser(@Param('id') id: string) {
-    return await this.usersService.getUserById(new Types.ObjectId(id));
+    return this.usersService.getUserById(new Types.ObjectId(id));
   }
 
   @ApiBearerAuth()
@@ -57,25 +61,25 @@ export class UsersController {
     status: 401,
     description: 'Invalid JWT bearer access token',
   })
+  @ApiInternalServerErrorResponse({
+    description: 'An unexpected error occurred. Please try again later!',
+  })
   @UseGuards(JwtGuard)
   @Get('search/:displayName')
   async getUserByDisplayName(
     @Param('displayName') displayName: string,
     @GetUser('_id') currentUserId: Types.ObjectId,
   ) {
-    return await this.usersService.getUserByDisplayName(
-      displayName,
-      currentUserId,
-    );
+    return this.usersService.getUserByDisplayName(displayName, currentUserId);
   }
 
   @ApiBearerAuth()
   @ApiOkResponse({ status: 200, type: PrivateUserDto })
   @ApiBadRequestResponse({
-    description: 'Email already exists',
+    description: 'Email address already in use',
   })
   @ApiInternalServerErrorResponse({
-    description: "Couldn't update user",
+    description: 'An unexpected error occurred. Please try again later!',
   })
   @ApiUnauthorizedResponse({
     status: 401,
@@ -87,7 +91,7 @@ export class UsersController {
     @GetUser('_id') _id: Types.ObjectId,
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    return await this.usersService.updateUser(_id, updateUserDto);
+    return this.usersService.updateUser(_id, updateUserDto);
   }
 
   @ApiBearerAuth()
@@ -104,7 +108,12 @@ export class UsersController {
       },
     },
   })
-  @ApiInternalServerErrorResponse({ description: 'Could not update avatar' })
+  @ApiInternalServerErrorResponse({
+    description: 'Could not update avatar. Please try again later!',
+  })
+  @ApiBadGatewayResponse({
+    description: 'Cloudinary Error',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid JWT bearer access token',
@@ -115,7 +124,7 @@ export class UsersController {
     @GetUser() user: User,
     @Body() updateAvatarDto: ChangeAvatarDto,
   ) {
-    return await this.usersService.changeAvatar(user, updateAvatarDto);
+    return this.usersService.changeAvatar(user, updateAvatarDto);
   }
 
   @ApiBearerAuth()
@@ -131,12 +140,15 @@ export class UsersController {
       },
     },
   })
+  @ApiBadRequestResponse({
+    description: 'New password and its confirmation do not match',
+  })
   @ApiUnauthorizedResponse({
     status: 401,
     description: 'Invalid JWT bearer access token or password',
   })
   @ApiInternalServerErrorResponse({
-    description: "Couldn't change password",
+    description: 'An unexpected error occurred. Please try again later!',
   })
   @UseGuards(JwtGuard)
   @Patch('update-password')
@@ -144,7 +156,7 @@ export class UsersController {
     @GetUser() user: User,
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
-    return await this.usersService.changePassword(user, changePasswordDto);
+    return this.usersService.changePassword(user, changePasswordDto);
   }
 
   @ApiBearerAuth()
@@ -161,6 +173,9 @@ export class UsersController {
       },
     },
   })
+  @ApiBadRequestResponse({
+    description: 'Passwords do not match',
+  })
   @ApiInternalServerErrorResponse({
     description: 'An error occurred while deleting the user',
   })
@@ -172,9 +187,9 @@ export class UsersController {
   @Delete()
   @HttpCode(204)
   async deleteUser(
-    @GetUser('_id') _id: Types.ObjectId,
+    @GetUser() user: User,
     @Body() deleteUserDto: DeleteUserDto,
   ) {
-    return await this.usersService.deleteUser(_id, deleteUserDto);
+    return this.usersService.deleteUser(user, deleteUserDto);
   }
 }

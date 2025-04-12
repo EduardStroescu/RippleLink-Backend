@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy the source code
 COPY . .
@@ -25,8 +25,10 @@ WORKDIR /app
 # Copy the built files from the previous stage
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/client ./client
-COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package*.json ./
+
+# Install production dependencies
+RUN npm ci --omit=dev
 
 # Expose the port
 EXPOSE 3000
